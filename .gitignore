@@ -1,0 +1,78 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+build/
+.env
+.env.local
+.env.*.local
+*.log
+
+# macOS
+.DS_Store
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.ipa
+*.dSYM.zip
+*.dSYM
+Carthage/Build/
+Pods/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.moved-aside
+*.hmap
+*.ipa
+*.xcworkspace
+!default.xcworkspace
+*.xcarchive
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Redis
+dump.rdb
+
+# Docker
+.docker/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
