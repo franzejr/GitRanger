@@ -16,6 +16,7 @@ export interface AIService {
     diff: string,
     repoPath?: string
   ): Promise<CommitSummary>;
+  generate(prompt: string, repoPath?: string): Promise<string>;
 }
 
 export type AIProvider = 'claude_code' | 'anthropic_api' | 'openai' | 'ollama';

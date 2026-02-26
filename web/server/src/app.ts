@@ -3,6 +3,7 @@ import cors from 'cors';
 import { healthRouter } from './routes/health.js';
 import { reposRouter } from './routes/repos.js';
 import { commitsRouter } from './routes/commits.js';
+import { aiRouter } from './routes/ai.js';
 
 export function createApp() {
   const app = express();
@@ -14,6 +15,7 @@ export function createApp() {
   app.use('/api/health', healthRouter);
   app.use('/api/repos', reposRouter);
   app.use('/api/commits', commitsRouter);
+  app.use('/api/ai', aiRouter);
 
   // Error handling middleware
   app.use(
