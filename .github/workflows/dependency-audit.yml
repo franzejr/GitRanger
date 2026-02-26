@@ -1,0 +1,33 @@
+name: Dependency Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'macos/Package.swift'
+      - 'macos/Package.resolved'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'macos/Package.swift'
+      - 'macos/Package.resolved'
+  schedule:
+    - cron: '0 9 * * 1' # Every Monday at 9am UTC
+
+jobs:
+  audit:
+    name: Vulnerability Scan
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install osv-scanner
+        run: brew install osv-scanner
+
+      - name: Scan Swift dependencies
+        run: osv-scanner --lockfile=macos/Package.resolved
+        continue-on-error: true
+
+      - name: List dependency tree
+        working-directory: macos
+        run: swift package show-dependencies --format json | python3 -m json.tool

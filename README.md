@@ -6,27 +6,25 @@ An open-source tool that narrates the full history of any git project with AI-po
 
 - **Import repositories** by GitHub URL or any git URL
 - **AI-powered commit summaries** with impact levels (patch/minor/major/breaking)
+- **AI-powered PR code reviews** with customizable prompts per repo
+- **Multi-commit narratives** — select multiple commits and get a story of what changed
 - **Multiple AI providers**: Claude Code (recommended), Anthropic API, OpenAI, Ollama
-- **Filter commits** by author and date range
+- **Filter commits** by author, date range, and branch
 - **Background monitoring** with notifications for new commits
 - **Cost tracking** for AI usage
 
 ## Platforms
 
-GitNarrate is available on two platforms:
-
 ### macOS App (Native)
 
 A full-featured SwiftUI application with:
-- 3-column NavigationSplitView layout
-- SwiftData persistence
-- Native notifications
-- Menu bar status icon
-- Auto-updates via Sparkle
-
-**Requirements:**
-- macOS 14 (Sonoma) or later
-- Claude Code CLI (recommended) or API keys for other providers
+- 3-column NavigationSplitView layout (sidebar, commit/PR list, detail)
+- Branch switching and incremental commit loading
+- GitHub PR listing and AI code review via `gh` CLI
+- Per-repo GitHub account selection and custom review prompts
+- Live clone progress with object/delta streaming
+- SwiftData persistence with cached AI reviews
+- Native notifications and menu bar status icon
 
 ### Web App (Self-hosted)
 
@@ -36,32 +34,43 @@ A React + Node.js application with:
 - SQLite database
 - Docker support for easy deployment
 
+## Quick Start
+
+### macOS App
+
+**Requirements:**
+- macOS 14 (Sonoma) or later
+- Xcode 15+ or Swift 5.9+ toolchain
+- Claude Code CLI (recommended) or API keys for other providers
+- `gh` CLI for PR reviews (optional): `brew install gh && gh auth login`
+
+```bash
+# Clone the repository
+git clone https://github.com/franzejr/GitNarrate.git
+cd GitNarrate/macos
+
+# Build with Swift Package Manager
+swift build
+
+# Run the app
+swift run
+
+# Or build release
+swift build -c release
+.build/release/GitNarrate
+```
+
+### Web App
+
 **Requirements:**
 - Node.js 18+
 - Redis (for background job queue)
 - Docker (optional, for containerized deployment)
 
-## Quick Start
-
-### macOS App
-
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/gitnarrate.git
-cd gitnarrate/macos
-
-# Open in Xcode
-open GitNarrate.xcodeproj
-
-# Build and run (Cmd+R)
-```
-
-### Web App
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/gitnarrate.git
-cd gitnarrate/web
+git clone https://github.com/franzejr/GitNarrate.git
+cd GitNarrate/web
 
 # Install dependencies
 cd server && npm install
@@ -79,7 +88,7 @@ npm run dev
 ### Docker Deployment
 
 ```bash
-cd gitnarrate/web
+cd GitNarrate/web
 docker-compose up -d
 ```
 
@@ -109,8 +118,6 @@ Get an API key from [platform.openai.com](https://platform.openai.com/).
 
 ### Ollama (Fully Local)
 
-Install Ollama and pull a model:
-
 ```bash
 # Install Ollama
 brew install ollama
@@ -122,25 +129,61 @@ ollama pull llama3.2
 ollama serve
 ```
 
+## PR Code Reviews (macOS)
+
+The macOS app can list open GitHub PRs and generate AI-powered code reviews.
+
+**Setup:**
+1. Install GitHub CLI: `brew install gh`
+2. Authenticate: `gh auth login`
+3. Import a GitHub repo in the app
+4. Switch to the "Pull Requests" tab
+
+**Per-repo settings** (right-click repo > Settings):
+- Choose which `gh` account to use (if you have multiple)
+- Write custom review instructions per repo
+
 ## Project Structure
 
 ```
-gitnarrate/
-├── macos/          # SwiftUI macOS app (Xcode project)
+GitNarrate/
+├── macos/              # SwiftUI macOS app (Swift Package Manager)
+│   ├── Package.swift
+│   ├── Sources/
+│   │   └── GitNarrate/
+│   │       ├── App/            # App entry point
+│   │       ├── Models/         # SwiftData models (Repo, Commit, PRReview)
+│   │       ├── Services/       # Git, GitHub, AI, Shell, Polling
+│   │       ├── ViewModels/     # @Observable view models
+│   │       └── Views/          # SwiftUI views
+│   └── Tests/
 ├── web/
-│   ├── client/     # React frontend (Vite + Tailwind)
-│   └── server/     # Express backend (TypeScript)
-├── docs/           # Documentation
+│   ├── client/         # React frontend (Vite + Tailwind)
+│   └── server/         # Express backend (TypeScript)
+├── .github/
+│   └── workflows/      # CI: build, lint, audit, release, binary size
+├── docs/               # Architecture documentation
 ├── README.md
 ├── CONTRIBUTING.md
-└── LICENSE
+└── LICENSE             # MIT
 ```
+
+## CI/CD
+
+GitHub Actions workflows:
+
+| Workflow | Trigger | What it does |
+|----------|---------|-------------|
+| **Build & Lint** | Push/PR to main | `swift build`, `swift test`, SwiftLint |
+| **Dependency Audit** | Package.swift changes + weekly | osv-scanner vulnerability check |
+| **Binary Size** | PRs | Comments binary size delta on PRs |
+| **Release** | Tag `v*` | Builds .app bundle, creates GitHub Release |
 
 ## Documentation
 
 See the [docs/](./docs) folder for detailed documentation:
 
-- [Architecture](./docs/architecture-v4.md) - System design and technical details
+- [Architecture](./docs/architecture-v4.md) — System design and technical details
 
 ## Contributing
 
@@ -148,4 +191,4 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for gu
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) for details.
+MIT License — see [LICENSE](./LICENSE) for details.

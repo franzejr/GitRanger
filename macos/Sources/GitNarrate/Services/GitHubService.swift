@@ -1,0 +1,265 @@
+import Foundation
+
+final class GitHubService {
+    static let shared = GitHubService()
+
+    private let shell = ShellService.shared
+    private init() {}
+
+    // MARK: - Accounts
+
+    func listAccounts() async -> [String] {
+        guard let output = try? await shell.execute(
+            "gh", arguments: ["auth", "status"],
+            environment: baseShellEnv(), timeout: 10
+        ) else {
+            // gh auth status writes to stderr on success, try run() instead
+            guard let result = try? await shell.run(
+                "gh", arguments: ["auth", "status"],
+                environment: baseShellEnv(), timeout: 10
+            ) else { return [] }
+            let combined = result.stdout + result.stderr
+            return parseAccounts(from: combined)
+        }
+        return parseAccounts(from: output)
+    }
+
+    private func parseAccounts(from text: String) -> [String] {
+        // Matches "Logged in to github.com account <username>"
+        text.components(separatedBy: "\n")
+            .compactMap { line -> String? in
+                guard line.contains("Logged in to") && line.contains("account") else { return nil }
+                let parts = line.components(separatedBy: "account ")
+                return parts.last?.components(separatedBy: " ").first?.trimmingCharacters(in: .whitespaces)
+            }
+    }
+
+    private func shellEnv(account: String? = nil) async -> [String: String] {
+        var env = baseShellEnv()
+        if let account {
+            // Get token for specific account
+            if let result = try? await shell.run(
+                "gh", arguments: ["auth", "token", "--user", account],
+                environment: env, timeout: 5
+            ), result.exitCode == 0 {
+                let token = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !token.isEmpty {
+                    env["GH_TOKEN"] = token
+                }
+            }
+        }
+        return env
+    }
+
+    // MARK: - Availability
+
+    func isAvailable() async -> Bool {
+        do {
+            let output = try await shell.execute(
+                "which", arguments: ["gh"],
+                environment: baseShellEnv()
+            )
+            guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return false
+            }
+            let result = try await shell.run(
+                "gh", arguments: ["auth", "status"],
+                environment: baseShellEnv(),
+                timeout: 10
+            )
+            return result.exitCode == 0
+        } catch {
+            return false
+        }
+    }
+
+    func isGitHubRepo(url: String) -> Bool {
+        url.contains("github.com")
+    }
+
+    /// Extract "owner/repo" from a GitHub URL (HTTPS or SSH)
+    func extractRepoSlug(url: String) -> String? {
+        // HTTPS: https://github.com/owner/repo.git
+        // SSH:   git@github.com:owner/repo.git
+        let cleaned = url
+            .replacingOccurrences(of: ".git", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        if cleaned.contains("github.com/") {
+            let parts = cleaned.components(separatedBy: "github.com/")
+            if let path = parts.last, path.contains("/") {
+                return path
+            }
+        } else if cleaned.contains("github.com:") {
+            let parts = cleaned.components(separatedBy: "github.com:")
+            if let path = parts.last, path.contains("/") {
+                return path
+            }
+        }
+        return nil
+    }
+
+    // MARK: - List PRs
+
+    func listPullRequests(repoUrl: String, account: String? = nil) async throws -> [PullRequest] {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let fields = "number,title,author,state,headRefName,headRefOid,baseRefName," +
+                     "createdAt,updatedAt,additions,deletions,changedFiles,url,isDraft"
+
+        let env = await shellEnv(account: account)
+        let output = try await shell.execute(
+            "gh",
+            arguments: ["pr", "list", "-R", slug, "--state", "open", "--json", fields, "--limit", "50"],
+            environment: env,
+            timeout: 30
+        )
+
+        guard let data = output.data(using: .utf8) else {
+            throw GitHubError.invalidResponse("Empty output from gh pr list")
+        }
+
+        let dtos = try JSONDecoder.ghDecoder.decode([PRListDTO].self, from: data)
+        return dtos.map { $0.toPullRequest() }
+    }
+
+    // MARK: - PR Diff
+
+    func getPRDiff(repoUrl: String, prNumber: Int, account: String? = nil) async throws -> String {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        return try await shell.execute(
+            "gh",
+            arguments: ["pr", "diff", "\(prNumber)", "-R", slug],
+            environment: env,
+            timeout: 30
+        )
+    }
+
+    // MARK: - PR Detail
+
+    func getPRDetail(repoUrl: String, prNumber: Int, account: String? = nil) async throws -> PRDetail {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        let output = try await shell.execute(
+            "gh",
+            arguments: ["pr", "view", "\(prNumber)", "-R", slug, "--json", "title,body"],
+            environment: env,
+            timeout: 15
+        )
+
+        guard let data = output.data(using: .utf8) else {
+            throw GitHubError.invalidResponse("Empty output from gh pr view")
+        }
+
+        let dto = try JSONDecoder().decode(PRDetailDTO.self, from: data)
+        return PRDetail(title: dto.title, body: dto.body ?? "")
+    }
+
+    // MARK: - Private
+
+    private func baseShellEnv() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        // Ensure Homebrew paths are available for GUI apps
+        let path = env["PATH"] ?? ""
+        let extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
+        let missing = extraPaths.filter { !path.contains($0) }
+        if !missing.isEmpty {
+            env["PATH"] = (missing + [path]).joined(separator: ":")
+        }
+        return env
+    }
+}
+
+// MARK: - JSON DTOs
+
+private struct PRListDTO: Codable {
+    let number: Int
+    let title: String
+    let author: AuthorDTO
+    let state: String
+    let headRefName: String
+    let headRefOid: String
+    let baseRefName: String
+    let createdAt: String
+    let updatedAt: String
+    let additions: Int
+    let deletions: Int
+    let changedFiles: Int
+    let url: String
+    let isDraft: Bool
+
+    struct AuthorDTO: Codable {
+        let login: String
+    }
+
+    func toPullRequest() -> PullRequest {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        return PullRequest(
+            number: number,
+            title: title,
+            authorLogin: author.login,
+            state: state,
+            headRefName: headRefName,
+            headRefOid: headRefOid,
+            baseRefName: baseRefName,
+            createdAt: formatter.date(from: createdAt) ?? Date(),
+            updatedAt: formatter.date(from: updatedAt) ?? Date(),
+            additions: additions,
+            deletions: deletions,
+            changedFiles: changedFiles,
+            url: url,
+            isDraft: isDraft
+        )
+    }
+}
+
+private struct PRDetailDTO: Codable {
+    let title: String
+    let body: String?
+}
+
+private extension JSONDecoder {
+    static let ghDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        return decoder
+    }()
+}
+
+// MARK: - Errors
+
+enum GitHubError: LocalizedError {
+    case ghNotInstalled
+    case ghNotAuthenticated
+    case notAGitHubRepo
+    case repoNotFound(String)
+    case invalidResponse(String)
+    case commandFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .ghNotInstalled:
+            "GitHub CLI (gh) is not installed. Install with: brew install gh"
+        case .ghNotAuthenticated:
+            "GitHub CLI is not authenticated. Run: gh auth login"
+        case .notAGitHubRepo:
+            "PR review is only available for GitHub repositories."
+        case .repoNotFound(let url):
+            "Could not find this repository on GitHub. It may be private, renamed, or deleted.\n\nURL: \(url)"
+        case .invalidResponse(let detail):
+            "Invalid GitHub response: \(detail)"
+        case .commandFailed(let detail):
+            "GitHub CLI error: \(detail)"
+        }
+    }
+}
