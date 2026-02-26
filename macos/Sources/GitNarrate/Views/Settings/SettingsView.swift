@@ -128,7 +128,10 @@ struct SettingsView: View {
     private var prReviewTab: some View {
         Form {
             Section("Review Prompt") {
-                Text("Customize the instructions sent to the AI when reviewing pull requests. Leave blank to use the default prompt.")
+                Text(
+                    "Customize the instructions sent to the AI when reviewing PRs. " +
+                    "Leave blank to use the default prompt."
+                )
                     .foregroundStyle(.secondary)
                     .font(.caption)
 

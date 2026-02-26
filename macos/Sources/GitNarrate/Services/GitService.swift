@@ -104,6 +104,15 @@ final class GitService {
 
     // MARK: - Log
 
+    struct LogQuery {
+        var branch: String?
+        var maxCount: Int?
+        var since: String?
+        var until: String?
+        var author: String?
+        var skip: Int?
+    }
+
     func getLog(
         repoPath: URL,
         branch: String? = nil,
@@ -207,7 +216,18 @@ final class GitService {
 
     // MARK: - Private
 
-    private func parseLogOutput(_ output: String, separator: String) -> [CommitInfo] {
+    private struct StatResult {
+        let filesChanged: Int
+        let insertions: Int
+        let deletions: Int
+
+        static let zero = StatResult(filesChanged: 0, insertions: 0, deletions: 0)
+    }
+
+    private func parseLogOutput(
+        _ output: String,
+        separator: String
+    ) -> [CommitInfo] {
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
 
@@ -216,69 +236,65 @@ final class GitService {
         var i = 0
 
         while i < lines.count {
-            let line = lines[i]
-            guard line.contains(separator) else {
+            guard let commit = parseNextCommit(
+                lines: lines, index: &i,
+                separator: separator, dateFormatter: dateFormatter
+            ) else {
                 i += 1
                 continue
             }
-
-            let parts = line.components(separatedBy: separator)
-            guard parts.count >= 5 else {
-                i += 1
-                continue
-            }
-
-            let sha = parts[0]
-            let message = parts[1]
-            let authorName = parts[2]
-            let authorEmail = parts[3]
-            let dateStr = parts[4]
-            let body = parts.count > 5 ? parts[5] : ""
-
-            // Collect stat lines after the format line
-            var statBlock = body
-            i += 1
-            while i < lines.count && !lines[i].contains(separator) {
-                statBlock += "\n" + lines[i]
-                i += 1
-            }
-
-            let (filesChanged, insertions, deletions) = parseStatBlock(statBlock)
-            let date = dateFormatter.date(from: dateStr) ?? Date()
-
-            commits.append(CommitInfo(
-                sha: sha,
-                message: message,
-                authorName: authorName,
-                authorEmail: authorEmail,
-                date: date,
-                filesChanged: filesChanged,
-                insertions: insertions,
-                deletions: deletions
-            ))
+            commits.append(commit)
         }
 
         return commits
     }
 
-    private func parseStatBlock(_ block: String) -> (Int, Int, Int) {
-        // Match: "3 files changed, 50 insertions(+), 10 deletions(-)"
+    private func parseNextCommit(
+        lines: [String], index i: inout Int,
+        separator: String, dateFormatter: ISO8601DateFormatter
+    ) -> CommitInfo? {
+        let line = lines[i]
+        guard line.contains(separator) else { return nil }
+
+        let parts = line.components(separatedBy: separator)
+        guard parts.count >= 5 else { return nil }
+
+        var statBlock = parts.count > 5 ? parts[5] : ""
+        i += 1
+        while i < lines.count && !lines[i].contains(separator) {
+            statBlock += "\n" + lines[i]
+            i += 1
+        }
+
+        let stat = parseStatBlock(statBlock)
+        return CommitInfo(
+            sha: parts[0], message: parts[1],
+            authorName: parts[2], authorEmail: parts[3],
+            date: dateFormatter.date(from: parts[4]) ?? Date(),
+            filesChanged: stat.filesChanged,
+            insertions: stat.insertions, deletions: stat.deletions
+        )
+    }
+
+    private func parseStatBlock(_ block: String) -> StatResult {
         let pattern = #"(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(
                   in: block,
                   range: NSRange(block.startIndex..., in: block)
               ) else {
-            return (0, 0, 0)
+            return .zero
         }
 
-        func intAt(_ index: Int) -> Int {
-            guard index < match.numberOfRanges,
-                  let range = Range(match.range(at: index), in: block) else { return 0 }
+        func intAt(_ idx: Int) -> Int {
+            guard idx < match.numberOfRanges,
+                  let range = Range(match.range(at: idx), in: block) else { return 0 }
             return Int(block[range]) ?? 0
         }
 
-        return (intAt(1), intAt(2), intAt(3))
+        return StatResult(
+            filesChanged: intAt(1), insertions: intAt(2), deletions: intAt(3)
+        )
     }
 }
 

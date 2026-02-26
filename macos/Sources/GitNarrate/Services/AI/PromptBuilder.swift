@@ -40,7 +40,8 @@ enum PromptBuilder {
         }.joined(separator: "\n\n")
 
         return """
-        You are a technical storyteller. Below are \(commits.count) git commits from the "\(repoName)" repository, listed in chronological order (oldest first).
+        You are a technical storyteller. Below are \(commits.count) git commits \
+        from the "\(repoName)" repository, listed in chronological order (oldest first).
 
         Write a narrative that tells the story of these changes as a cohesive account. Your narrative should:
 
@@ -73,31 +74,33 @@ enum PromptBuilder {
         """
     }
 
-    static func buildPRReviewPrompt(
-        prTitle: String,
-        prBody: String,
-        prAuthor: String,
-        baseBranch: String,
-        headBranch: String,
-        diff: String,
-        customPrompt: String? = nil
-    ) -> String {
-        let instructions = (customPrompt?.isEmpty ?? true)
-            ? defaultPRReviewPrompt
-            : customPrompt!
+    struct PRReviewInput {
+        let prTitle: String
+        let prBody: String
+        let prAuthor: String
+        let baseBranch: String
+        let headBranch: String
+        let diff: String
+        var customPrompt: String?
+    }
 
-        let truncatedDiff = String(diff.prefix(30000))
+    static func buildPRReviewPrompt(_ input: PRReviewInput) -> String {
+        let instructions = (input.customPrompt?.isEmpty ?? true)
+            ? defaultPRReviewPrompt
+            : input.customPrompt!
+
+        let truncatedDiff = String(input.diff.prefix(30000))
 
         return """
         \(instructions)
 
         --- Pull Request ---
-        Title: \(prTitle)
-        Author: \(prAuthor)
-        Branch: \(headBranch) -> \(baseBranch)
+        Title: \(input.prTitle)
+        Author: \(input.prAuthor)
+        Branch: \(input.headBranch) -> \(input.baseBranch)
 
         Description:
-        \(prBody.isEmpty ? "(no description)" : prBody)
+        \(input.prBody.isEmpty ? "(no description)" : input.prBody)
 
         --- Diff ---
         \(truncatedDiff)

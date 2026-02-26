@@ -66,7 +66,7 @@ final class PRReviewViewModel {
             let customPrompt = repo.reviewPrompt
                 ?? UserDefaults.standard.string(forKey: "prReviewPrompt")
 
-            let prompt = PromptBuilder.buildPRReviewPrompt(
+            let prompt = PromptBuilder.buildPRReviewPrompt(.init(
                 prTitle: pr.title,
                 prBody: prDetail.body,
                 prAuthor: pr.authorLogin,
@@ -74,7 +74,7 @@ final class PRReviewViewModel {
                 headBranch: pr.headRefName,
                 diff: diff,
                 customPrompt: customPrompt
-            )
+            ))
 
             let provider = AIServiceFactory.activeProvider()
             let result = try await provider.generate(

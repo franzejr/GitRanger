@@ -13,7 +13,7 @@ struct NarrativeView: View {
                         .fontWeight(.semibold)
 
                     if let timespan = viewModel.timespan {
-                        Text("\(viewModel.commitCount) commits \u{2022} \(timespan.from, style: .date) \u{2013} \(timespan.to, style: .date)")
+                        timespanLabel(timespan)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -47,6 +47,15 @@ struct NarrativeView: View {
                 .padding()
             }
         }
+    }
+
+    private func timespanLabel(
+        _ timespan: (from: Date, to: Date)
+    ) -> Text {
+        Text("\(viewModel.commitCount) commits \u{2022} ") +
+        Text(timespan.from, style: .date) +
+        Text(" \u{2013} ") +
+        Text(timespan.to, style: .date)
     }
 
     private var loadingState: some View {
