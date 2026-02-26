@@ -107,6 +107,50 @@ enum PromptBuilder {
         """
     }
 
+    // MARK: - Second Review
+
+    static var defaultSecondReviewPrompt: String {
+        """
+        You previously reviewed a pull request. Now review your own review. \
+        Re-examine the diff carefully and validate each point you made.
+
+        For each point in your original review:
+        - Confirm if it holds up against the actual code
+        - Flag any that were incorrect, overstated, or misleading
+        - Note anything important you missed the first time
+
+        Be honest and specific. Reference the diff when correcting yourself.
+        """
+    }
+
+    struct SecondReviewInput {
+        let firstReview: String
+        let prTitle: String
+        let prAuthor: String
+        let baseBranch: String
+        let headBranch: String
+        let diff: String
+    }
+
+    static func buildSecondReviewPrompt(_ input: SecondReviewInput) -> String {
+        let truncatedDiff = String(input.diff.prefix(30000))
+
+        return """
+        \(defaultSecondReviewPrompt)
+
+        --- Pull Request ---
+        Title: \(input.prTitle)
+        Author: \(input.prAuthor)
+        Branch: \(input.headBranch) -> \(input.baseBranch)
+
+        --- Your Previous Review ---
+        \(input.firstReview)
+
+        --- Diff ---
+        \(truncatedDiff)
+        """
+    }
+
     // MARK: - Parsing
 
     static func parseCommitSummary(raw: String) throws -> CommitSummary {

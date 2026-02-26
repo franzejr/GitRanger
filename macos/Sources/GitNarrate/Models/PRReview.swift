@@ -10,6 +10,7 @@ final class PRReview {
     var reviewText: String
     var reviewedAt: Date
     var providerName: String
+    var secondReviewText: String?
 
     init(
         repoUrl: String,

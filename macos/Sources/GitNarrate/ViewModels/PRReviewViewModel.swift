@@ -4,7 +4,9 @@ import SwiftData
 @Observable
 final class PRReviewViewModel {
     var review: String?
+    var secondReview: String?
     var isLoading = false
+    var isLoadingSecondReview = false
     var error: String?
     var diff: String?
     var selectedPR: PullRequest?
@@ -22,6 +24,7 @@ final class PRReviewViewModel {
         isLoading = true
         error = nil
         review = nil
+        secondReview = nil
         diff = nil
         isCached = false
 
@@ -33,6 +36,7 @@ final class PRReviewViewModel {
                 headSha: pr.headRefOid
             ) {
                 review = cached.reviewText
+                secondReview = cached.secondReviewText
                 isCached = true
             }
 
@@ -53,6 +57,7 @@ final class PRReviewViewModel {
         isLoading = true
         error = nil
         review = nil
+        secondReview = nil
         isCached = false
 
         do {
@@ -98,10 +103,49 @@ final class PRReviewViewModel {
         isLoading = false
     }
 
+    func generateSecondReview(repo: Repo) async {
+        guard let pr = selectedPR,
+              let diff,
+              let firstReview = review else { return }
+        isLoadingSecondReview = true
+        secondReview = nil
+
+        do {
+            let prompt = PromptBuilder.buildSecondReviewPrompt(.init(
+                firstReview: firstReview,
+                prTitle: pr.title,
+                prAuthor: pr.authorLogin,
+                baseBranch: pr.baseRefName,
+                headBranch: pr.headRefName,
+                diff: diff
+            ))
+
+            let provider = AIServiceFactory.activeProvider()
+            let result = try await provider.generate(
+                prompt: prompt,
+                repoPath: URL(fileURLWithPath: repo.localPath)
+            )
+
+            secondReview = result
+            updateCachedSecondReview(
+                repoUrl: repo.url,
+                prNumber: pr.number,
+                headSha: pr.headRefOid,
+                secondReviewText: result
+            )
+        } catch {
+            self.error = error.localizedDescription
+        }
+
+        isLoadingSecondReview = false
+    }
+
     func dismiss() {
         review = nil
+        secondReview = nil
         error = nil
         isLoading = false
+        isLoadingSecondReview = false
         diff = nil
         selectedPR = nil
         isCached = false
@@ -121,6 +165,19 @@ final class PRReviewViewModel {
         } catch {
             return nil
         }
+    }
+
+    private func updateCachedSecondReview(
+        repoUrl: String,
+        prNumber: Int,
+        headSha: String,
+        secondReviewText: String
+    ) {
+        guard let cached = findCachedReview(
+            repoUrl: repoUrl, prNumber: prNumber, headSha: headSha
+        ) else { return }
+        cached.secondReviewText = secondReviewText
+        try? modelContext?.save()
     }
 
     private func saveReview(
