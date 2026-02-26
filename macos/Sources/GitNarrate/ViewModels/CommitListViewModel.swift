@@ -106,16 +106,13 @@ final class CommitListViewModel {
         guard let modelContext, !isLoadingMore else { return }
         isLoadingMore = true
 
-        let repoPath = URL(fileURLWithPath: repo.localPath)
-        let skipCount = total
-
         do {
             let branch = selectedBranch.isEmpty ? nil : selectedBranch
             let commitInfos = try await gitService.getLog(
-                repoPath: repoPath,
+                repoPath: URL(fileURLWithPath: repo.localPath),
                 branch: branch,
                 maxCount: 50,
-                skip: skipCount
+                skip: total
             )
 
             guard !commitInfos.isEmpty else {
@@ -123,32 +120,9 @@ final class CommitListViewModel {
                 return
             }
 
-            // Only insert commits we don't already have
-            let repoId = repo.id
-            let existingDescriptor = FetchDescriptor<Commit>(
-                predicate: #Predicate { $0.repo?.id == repoId }
+            let inserted = insertNewCommits(
+                commitInfos, repo: repo, modelContext: modelContext
             )
-            let existingShas = Set(
-                (try? modelContext.fetch(existingDescriptor))?.map(\.sha) ?? []
-            )
-
-            var inserted = 0
-            for info in commitInfos where !existingShas.contains(info.sha) {
-                let commit = Commit(
-                    sha: info.sha,
-                    message: info.message,
-                    authorName: info.authorName,
-                    authorEmail: info.authorEmail,
-                    committedAt: info.date,
-                    filesChanged: info.filesChanged,
-                    insertions: info.insertions,
-                    deletions: info.deletions,
-                    repo: repo
-                )
-                modelContext.insert(commit)
-                inserted += 1
-            }
-
             if inserted > 0 {
                 try modelContext.save()
                 loadCommits(repoId: repo.id)
@@ -158,6 +132,36 @@ final class CommitListViewModel {
         }
 
         isLoadingMore = false
+    }
+
+    private func insertNewCommits(
+        _ infos: [CommitInfo], repo: Repo, modelContext: ModelContext
+    ) -> Int {
+        let repoId = repo.id
+        let existingDescriptor = FetchDescriptor<Commit>(
+            predicate: #Predicate { $0.repo?.id == repoId }
+        )
+        let existingShas = Set(
+            (try? modelContext.fetch(existingDescriptor))?.map(\.sha) ?? []
+        )
+
+        var inserted = 0
+        for info in infos where !existingShas.contains(info.sha) {
+            let commit = Commit(
+                sha: info.sha,
+                message: info.message,
+                authorName: info.authorName,
+                authorEmail: info.authorEmail,
+                committedAt: info.date,
+                filesChanged: info.filesChanged,
+                insertions: info.insertions,
+                deletions: info.deletions,
+                repo: repo
+            )
+            modelContext.insert(commit)
+            inserted += 1
+        }
+        return inserted
     }
 
     func loadBranches(repo: Repo) async {
@@ -222,6 +226,7 @@ final class CommitListViewModel {
     /// Builds a single predicate that correctly combines all active filters.
     /// SwiftData predicates can't be dynamically composed, so we use
     /// explicit branches for each filter combination.
+    // swiftlint:disable:next function_body_length
     private func buildPredicate(repoId: UUID) -> Predicate<Commit> {
         let hasAuthor = !filters.author.isEmpty
         let hasSince = filters.since != nil

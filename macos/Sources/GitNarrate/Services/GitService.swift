@@ -62,12 +62,10 @@ final class GitService {
             cwd: repoPath, timeout: 15
         ) {
             let lines = output.components(separatedBy: "\n")
-            for line in lines {
-                if line.contains("HEAD branch:") {
-                    let branch = line.components(separatedBy: "HEAD branch:").last?
-                        .trimmingCharacters(in: .whitespaces) ?? ""
-                    if !branch.isEmpty { return branch }
-                }
+            for line in lines where line.contains("HEAD branch:") {
+                let branch = line.components(separatedBy: "HEAD branch:").last?
+                    .trimmingCharacters(in: .whitespaces) ?? ""
+                if !branch.isEmpty { return branch }
             }
         }
 

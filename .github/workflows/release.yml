@@ -1,26 +1,96 @@
-name: Release Build
+name: Release
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    name: Build & Package
+  release:
+    name: Build & Release
     runs-on: macos-14
     defaults:
       run:
         working-directory: macos
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        working-directory: .
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            TAG="${GITHUB_REF#refs/tags/}"
+            PRERELEASE="false"
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            DATE=$(date -u +%Y%m%d)
+            VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
+            TAG="dev-${DATE}-${SHORT_SHA}"
+            PRERELEASE="true"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        working-directory: .
+        run: |
+          # Find the previous release tag (or use root if none)
+          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^(v|dev-)' | head -1 || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          # Generate categorized changelog from commits
+          {
+            echo "CHANGELOG<<CHANGELOG_EOF"
+
+            FEATURES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^Add\|^feat\|^Feature" -i 2>/dev/null || echo "")
+            FIXES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^Fix\|^fix:" -i 2>/dev/null || echo "")
+            OTHER=$(git log "$RANGE" --pretty=format:"- %s (%h)" --invert-grep --grep="^Add\|^feat\|^Feature\|^Fix\|^fix:" -i 2>/dev/null || echo "")
+
+            if [ -n "$FEATURES" ]; then
+              echo "### Features"
+              echo "$FEATURES"
+              echo ""
+            fi
+
+            if [ -n "$FIXES" ]; then
+              echo "### Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            if [ -n "$OTHER" ]; then
+              echo "### Other"
+              echo "$OTHER"
+              echo ""
+            fi
+
+            # If nothing was categorized, just list all commits
+            if [ -z "$FEATURES" ] && [ -z "$FIXES" ] && [ -z "$OTHER" ]; then
+              echo "### Changes"
+              git log "$RANGE" --pretty=format:"- %s (%h)" 2>/dev/null || echo "- Initial release"
+              echo ""
+            fi
+
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build release binary
         run: swift build -c release
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
       - name: Create app bundle
         run: |
@@ -28,7 +98,7 @@ jobs:
           mkdir -p "$APP_DIR"
           cp .build/release/GitNarrate "$APP_DIR/GitNarrate"
 
-          cat > "GitNarrate.app/Contents/Info.plist" << 'PLIST'
+          cat > "GitNarrate.app/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -55,18 +125,30 @@ jobs:
 
       - name: Create ZIP archive
         run: |
-          ditto -c -k --keepParent GitNarrate.app GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
+          ditto -c -k --keepParent GitNarrate.app \
+            "GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip"
+
+      - name: Delete existing dev tag (if re-running)
+        if: steps.version.outputs.PRERELEASE == 'true'
+        working-directory: .
+        run: |
+          TAG="${{ steps.version.outputs.TAG }}"
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: ${{ steps.version.outputs.PRERELEASE == 'true' && format('Dev Build {0}', steps.version.outputs.VERSION) || steps.version.outputs.VERSION }}
+          body: ${{ steps.changelog.outputs.CHANGELOG }}
+          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
+          files: macos/GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GitNarrate-${{ steps.version.outputs.VERSION }}-macos
           path: macos/GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: macos/GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

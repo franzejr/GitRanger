@@ -1,70 +1,59 @@
-import Testing
-import Foundation
+import XCTest
 @testable import GitNarrate
 
 // MARK: - GitService Tests
 
-@Suite("GitService")
-struct GitServiceTests {
+final class GitServiceTests: XCTestCase {
 
-    @Test("extractRepoName from HTTPS URL")
-    func extractRepoNameHTTPS() {
+    func testExtractRepoNameHTTPS() {
         let git = GitService.shared
-        #expect(git.extractRepoName(url: "https://github.com/user/my-repo.git") == "my-repo")
+        XCTAssertEqual(git.extractRepoName(url: "https://github.com/user/my-repo.git"), "my-repo")
     }
 
-    @Test("extractRepoName from HTTPS URL without .git")
-    func extractRepoNameHTTPSNoGit() {
+    func testExtractRepoNameHTTPSNoGit() {
         let git = GitService.shared
-        #expect(git.extractRepoName(url: "https://github.com/user/my-repo") == "my-repo")
+        XCTAssertEqual(git.extractRepoName(url: "https://github.com/user/my-repo"), "my-repo")
     }
 
-    @Test("extractRepoName from SSH URL")
-    func extractRepoNameSSH() {
+    func testExtractRepoNameSSH() {
         let git = GitService.shared
-        #expect(git.extractRepoName(url: "git@github.com:user/my-repo.git") == "my-repo")
+        XCTAssertEqual(git.extractRepoName(url: "git@github.com:user/my-repo.git"), "my-repo")
     }
 
-    @Test("extractRepoName with trailing slash")
-    func extractRepoNameTrailingSlash() {
+    func testExtractRepoNameTrailingSlash() {
         let git = GitService.shared
-        #expect(git.extractRepoName(url: "https://github.com/user/repo/") == "repo")
+        XCTAssertEqual(git.extractRepoName(url: "https://github.com/user/repo/"), "repo")
     }
 }
 
 // MARK: - AI Models Tests
 
-@Suite("AIModels")
-struct AIModelsTests {
+final class AIModelsTests: XCTestCase {
 
-    @Test("AIProvider displayName")
-    func providerDisplayNames() {
-        #expect(AIProvider.claudeCode.displayName == "Claude Code (Local)")
-        #expect(AIProvider.anthropicAPI.displayName == "Anthropic API")
-        #expect(AIProvider.openAI.displayName == "OpenAI API")
-        #expect(AIProvider.ollama.displayName == "Ollama (Local)")
+    func testProviderDisplayNames() {
+        XCTAssertEqual(AIProvider.claudeCode.displayName, "Claude Code (Local)")
+        XCTAssertEqual(AIProvider.anthropicAPI.displayName, "Anthropic API")
+        XCTAssertEqual(AIProvider.openAI.displayName, "OpenAI API")
+        XCTAssertEqual(AIProvider.ollama.displayName, "Ollama (Local)")
     }
 
-    @Test("AIProvider requiresAPIKey")
-    func providerRequiresAPIKey() {
-        #expect(AIProvider.claudeCode.requiresAPIKey == false)
-        #expect(AIProvider.anthropicAPI.requiresAPIKey == true)
-        #expect(AIProvider.openAI.requiresAPIKey == true)
-        #expect(AIProvider.ollama.requiresAPIKey == false)
+    func testProviderRequiresAPIKey() {
+        XCTAssertFalse(AIProvider.claudeCode.requiresAPIKey)
+        XCTAssertTrue(AIProvider.anthropicAPI.requiresAPIKey)
+        XCTAssertTrue(AIProvider.openAI.requiresAPIKey)
+        XCTAssertFalse(AIProvider.ollama.requiresAPIKey)
     }
 
-    @Test("ImpactLevel has all cases")
-    func impactLevelCases() {
+    func testImpactLevelCases() {
         let cases = ImpactLevel.allCases
-        #expect(cases.count == 4)
-        #expect(cases.contains(.patch))
-        #expect(cases.contains(.minor))
-        #expect(cases.contains(.major))
-        #expect(cases.contains(.breaking))
+        XCTAssertEqual(cases.count, 4)
+        XCTAssertTrue(cases.contains(.patch))
+        XCTAssertTrue(cases.contains(.minor))
+        XCTAssertTrue(cases.contains(.major))
+        XCTAssertTrue(cases.contains(.breaking))
     }
 
-    @Test("CommitSummary decodes from JSON")
-    func commitSummaryDecoding() throws {
+    func testCommitSummaryDecoding() throws {
         let json = """
         {
             "one_liner": "Fix login bug",
@@ -78,16 +67,15 @@ struct AIModelsTests {
         let data = json.data(using: .utf8)!
         let summary = try JSONDecoder().decode(CommitSummary.self, from: data)
 
-        #expect(summary.oneLiner == "Fix login bug")
-        #expect(summary.explanation == "The login flow was broken.")
-        #expect(summary.impact == "patch")
-        #expect(summary.categories == ["bugfix"])
-        #expect(summary.relatedFiles == ["src/auth.ts"])
-        #expect(summary.riskNotes == nil)
+        XCTAssertEqual(summary.oneLiner, "Fix login bug")
+        XCTAssertEqual(summary.explanation, "The login flow was broken.")
+        XCTAssertEqual(summary.impact, "patch")
+        XCTAssertEqual(summary.categories, ["bugfix"])
+        XCTAssertEqual(summary.relatedFiles, ["src/auth.ts"])
+        XCTAssertNil(summary.riskNotes)
     }
 
-    @Test("ClaudeCodeResponse decodes envelope")
-    func claudeCodeResponseDecoding() throws {
+    func testClaudeCodeResponseDecoding() throws {
         let json = """
         {
             "type": "result",
@@ -103,33 +91,30 @@ struct AIModelsTests {
         let data = json.data(using: .utf8)!
         let response = try JSONDecoder().decode(ClaudeCodeResponse.self, from: data)
 
-        #expect(response.type == "result")
-        #expect(response.subtype == "success")
-        #expect(response.isError == false)
-        #expect(response.costUsd == 0.003)
-        #expect(response.result.contains("Fix bug"))
+        XCTAssertEqual(response.type, "result")
+        XCTAssertEqual(response.subtype, "success")
+        XCTAssertFalse(response.isError)
+        XCTAssertEqual(response.costUsd, 0.003)
+        XCTAssertTrue(response.result.contains("Fix bug"))
     }
 }
 
 // MARK: - PromptBuilder Tests
 
-@Suite("PromptBuilder")
-struct PromptBuilderTests {
+final class PromptBuilderTests: XCTestCase {
 
-    @Test("buildCommitPrompt includes commit message and diff")
-    func buildCommitPrompt() {
+    func testBuildCommitPrompt() {
         let prompt = PromptBuilder.buildCommitPrompt(
             commitMessage: "Fix auth bug",
             diff: "+added line\n-removed line"
         )
-        #expect(prompt.contains("Fix auth bug"))
-        #expect(prompt.contains("+added line"))
-        #expect(prompt.contains("-removed line"))
-        #expect(prompt.contains("one_liner"))
+        XCTAssertTrue(prompt.contains("Fix auth bug"))
+        XCTAssertTrue(prompt.contains("+added line"))
+        XCTAssertTrue(prompt.contains("-removed line"))
+        XCTAssertTrue(prompt.contains("one_liner"))
     }
 
-    @Test("buildNarrativePrompt includes all commits")
-    func buildNarrativePrompt() {
+    func testBuildNarrativePrompt() {
         let commits = [
             NarrativeCommit(
                 sha: "abc1234", message: "First commit",
@@ -146,15 +131,14 @@ struct PromptBuilderTests {
             repoName: "test-repo",
             commits: commits
         )
-        #expect(prompt.contains("test-repo"))
-        #expect(prompt.contains("First commit"))
-        #expect(prompt.contains("Second commit"))
-        #expect(prompt.contains("Commit 1 of 2"))
-        #expect(prompt.contains("Commit 2 of 2"))
+        XCTAssertTrue(prompt.contains("test-repo"))
+        XCTAssertTrue(prompt.contains("First commit"))
+        XCTAssertTrue(prompt.contains("Second commit"))
+        XCTAssertTrue(prompt.contains("Commit 1 of 2"))
+        XCTAssertTrue(prompt.contains("Commit 2 of 2"))
     }
 
-    @Test("parseCommitSummary parses valid JSON")
-    func parseValidJSON() throws {
+    func testParseValidJSON() throws {
         let json = """
         {
             "one_liner": "Add feature",
@@ -164,12 +148,11 @@ struct PromptBuilderTests {
         }
         """
         let summary = try PromptBuilder.parseCommitSummary(raw: json)
-        #expect(summary.oneLiner == "Add feature")
-        #expect(summary.impact == "minor")
+        XCTAssertEqual(summary.oneLiner, "Add feature")
+        XCTAssertEqual(summary.impact, "minor")
     }
 
-    @Test("parseCommitSummary strips markdown fences")
-    func parseWithMarkdownFences() throws {
+    func testParseWithMarkdownFences() throws {
         let json = """
         ```json
         {
@@ -181,53 +164,45 @@ struct PromptBuilderTests {
         ```
         """
         let summary = try PromptBuilder.parseCommitSummary(raw: json)
-        #expect(summary.oneLiner == "Fix bug")
+        XCTAssertEqual(summary.oneLiner, "Fix bug")
     }
 
-    @Test("parseCommitSummary throws on invalid JSON")
-    func parseInvalidJSON() {
-        #expect(throws: (any Error).self) {
-            try PromptBuilder.parseCommitSummary(raw: "not json at all")
-        }
+    func testParseInvalidJSON() {
+        XCTAssertThrowsError(try PromptBuilder.parseCommitSummary(raw: "not json at all"))
     }
 }
 
 // MARK: - AIServiceFactory Tests
 
-@Suite("AIServiceFactory")
-struct AIServiceFactoryTests {
+final class AIServiceFactoryTests: XCTestCase {
 
-    @Test("create returns ClaudeCodeService")
-    func createClaudeCode() {
+    func testCreateClaudeCode() {
         let settings = AISettings()
         let service = AIServiceFactory.create(provider: .claudeCode, settings: settings)
-        #expect(service.displayName == "Claude Code (Local)")
-        #expect(service.requiresAPIKey == false)
+        XCTAssertEqual(service.displayName, "Claude Code (Local)")
+        XCTAssertFalse(service.requiresAPIKey)
     }
 
-    @Test("create returns AnthropicAPIService")
-    func createAnthropic() {
+    func testCreateAnthropic() {
         var settings = AISettings()
         settings.anthropicAPIKey = "test-key"
         let service = AIServiceFactory.create(provider: .anthropicAPI, settings: settings)
-        #expect(service.displayName == "Anthropic API")
-        #expect(service.requiresAPIKey == true)
+        XCTAssertEqual(service.displayName, "Anthropic API")
+        XCTAssertTrue(service.requiresAPIKey)
     }
 
-    @Test("create returns OpenAIService")
-    func createOpenAI() {
+    func testCreateOpenAI() {
         var settings = AISettings()
         settings.openAIAPIKey = "test-key"
         let service = AIServiceFactory.create(provider: .openAI, settings: settings)
-        #expect(service.displayName == "OpenAI API")
-        #expect(service.requiresAPIKey == true)
+        XCTAssertEqual(service.displayName, "OpenAI API")
+        XCTAssertTrue(service.requiresAPIKey)
     }
 
-    @Test("create returns OllamaService")
-    func createOllama() {
+    func testCreateOllama() {
         let settings = AISettings()
         let service = AIServiceFactory.create(provider: .ollama, settings: settings)
-        #expect(service.displayName == "Ollama (Local)")
-        #expect(service.requiresAPIKey == false)
+        XCTAssertEqual(service.displayName, "Ollama (Local)")
+        XCTAssertFalse(service.requiresAPIKey)
     }
 }

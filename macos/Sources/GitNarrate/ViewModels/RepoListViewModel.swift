@@ -39,60 +39,12 @@ final class RepoListViewModel {
 
         importTask = Task {
             do {
-                try Task.checkCancellation()
-                let localPath = try await gitService.clone(
-                    url: url,
-                    repoId: repoId
-                ) { [weak self] progress in
-                    DispatchQueue.main.async {
-                        self?.importDetail = progress
-                    }
-                }
-
-                try Task.checkCancellation()
-                importStatus = "Detecting default branch..."
-                importDetail = nil
-                let defaultBranch = try await gitService.getDefaultBranch(repoPath: localPath)
-                let name = gitService.extractRepoName(url: url)
-
-                let repo = Repo(
-                    id: repoId,
-                    name: name,
-                    url: url,
-                    localPath: localPath.path,
-                    defaultBranch: defaultBranch
+                let repo = try await performImport(
+                    url: url, repoId: repoId, modelContext: modelContext
                 )
-                modelContext.insert(repo)
-
-                try Task.checkCancellation()
-                importStatus = "Loading commits..."
-                let commitInfos = try await gitService.getLog(
-                    repoPath: localPath,
-                    maxCount: 30
-                )
-
-                importStatus = "Saving \(commitInfos.count) commits..."
-                for info in commitInfos {
-                    try Task.checkCancellation()
-                    let commit = Commit(
-                        sha: info.sha,
-                        message: info.message,
-                        authorName: info.authorName,
-                        authorEmail: info.authorEmail,
-                        committedAt: info.date,
-                        filesChanged: info.filesChanged,
-                        insertions: info.insertions,
-                        deletions: info.deletions,
-                        repo: repo
-                    )
-                    modelContext.insert(commit)
-                }
-
-                try modelContext.save()
                 loadRepos()
-                selectedRepoId = repoId
+                selectedRepoId = repo.id
             } catch is CancellationError {
-                // Clean up partially cloned repo on cancel
                 cleanupPartialImport(repoId: repoId)
             } catch {
                 importError = error.localizedDescription
@@ -104,6 +56,42 @@ final class RepoListViewModel {
             importDetail = nil
             importTask = nil
         }
+    }
+
+    private func performImport(
+        url: String, repoId: UUID, modelContext: ModelContext
+    ) async throws -> Repo {
+        try Task.checkCancellation()
+        let localPath = try await gitService.clone(
+            url: url, repoId: repoId
+        ) { [weak self] progress in
+            DispatchQueue.main.async { self?.importDetail = progress }
+        }
+
+        try Task.checkCancellation()
+        importStatus = "Detecting default branch..."
+        importDetail = nil
+        let defaultBranch = try await gitService.getDefaultBranch(repoPath: localPath)
+
+        let repo = Repo(
+            id: repoId,
+            name: gitService.extractRepoName(url: url),
+            url: url,
+            localPath: localPath.path,
+            defaultBranch: defaultBranch
+        )
+        modelContext.insert(repo)
+
+        try Task.checkCancellation()
+        importStatus = "Loading commits..."
+        let commitInfos = try await gitService.getLog(
+            repoPath: localPath, maxCount: 30
+        )
+
+        importStatus = "Saving \(commitInfos.count) commits..."
+        try insertCommits(commitInfos, repo: repo, modelContext: modelContext)
+        try modelContext.save()
+        return repo
     }
 
     func cancelImport() {
@@ -172,6 +160,26 @@ final class RepoListViewModel {
     }
 
     // MARK: - Private
+
+    private func insertCommits(
+        _ infos: [CommitInfo], repo: Repo, modelContext: ModelContext
+    ) throws {
+        for info in infos {
+            try Task.checkCancellation()
+            let commit = Commit(
+                sha: info.sha,
+                message: info.message,
+                authorName: info.authorName,
+                authorEmail: info.authorEmail,
+                committedAt: info.date,
+                filesChanged: info.filesChanged,
+                insertions: info.insertions,
+                deletions: info.deletions,
+                repo: repo
+            )
+            modelContext.insert(commit)
+        }
+    }
 
     private func cleanupPartialImport(repoId: UUID) {
         let appSupport = FileManager.default.urls(

@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 private extension String {
     func match(_ pattern: String) -> Bool {
