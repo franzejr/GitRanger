@@ -12,6 +12,8 @@ final class PollService {
     private var modelContext: ModelContext?
     private let gitService = GitService.shared
 
+    nonisolated init() {}
+
     func start(modelContext: ModelContext) {
         self.modelContext = modelContext
         requestNotificationPermission()

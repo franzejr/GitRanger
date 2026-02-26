@@ -113,15 +113,12 @@ final class ShellService {
                 stdinPipe.fileHandleForWriting.closeFile()
             }
 
-            // Stream stderr as data arrives
-            let stderrLock = NSLock()
-            var stderrAccumulator = Data()
+            // Thread-safe accumulator for stderr data
+            let accumulator = LockedData()
             stderrPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
-                stderrLock.lock()
-                stderrAccumulator.append(data)
-                stderrLock.unlock()
+                accumulator.append(data)
                 if let text = String(data: data, encoding: .utf8) {
                     stderrHandler(text)
                 }
@@ -141,9 +138,7 @@ final class ShellService {
                 timeoutItem.cancel()
                 stderrPipe.fileHandleForReading.readabilityHandler = nil
                 let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                stderrLock.lock()
-                let stderr = String(data: stderrAccumulator, encoding: .utf8) ?? ""
-                stderrLock.unlock()
+                let stderr = String(data: accumulator.data, encoding: .utf8) ?? ""
                 let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
 
                 continuation.resume(returning: ShellResult(
@@ -187,6 +182,24 @@ final class ShellService {
             )
         }
         return result.stdout
+    }
+}
+
+/// Thread-safe Data accumulator for use across concurrent closures.
+private final class LockedData: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _data = Data()
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return _data
+    }
+
+    func append(_ newData: Data) {
+        lock.lock()
+        _data.append(newData)
+        lock.unlock()
     }
 }
 
