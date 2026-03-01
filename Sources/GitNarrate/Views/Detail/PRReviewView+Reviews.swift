@@ -3,6 +3,7 @@ import SwiftUI
 
 // MARK: - Review Tab Content
 
+@MainActor
 extension PRReviewView {
     var reviewWithTabs: some View {
         VStack(alignment: .leading, spacing: 0) {

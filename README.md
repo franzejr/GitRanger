@@ -1,8 +1,8 @@
 # GitNarrate
 
-**Your git history, told as a story.** A native macOS app that turns commits, diffs, and pull requests into plain-English narratives powered by AI.
+**AI-powered git history narration and code review.**
 
-Stop scrolling through cryptic commit messages. GitNarrate gives every repository a voice — summarizing changes, reviewing PRs, and monitoring your projects in real time.
+A native macOS app that turns commits, diffs, and pull requests into plain-English narratives. Stop scrolling through cryptic commit messages — GitNarrate summarizes changes, reviews PRs with parallel AI agents, and monitors your projects in real time.
 
 ---
 
@@ -54,7 +54,7 @@ Stage, unstage, and discard changes with a visual file list. View inline diffs f
 
 ### Multi-Commit Narratives
 
-Select 2–20 commits and get a prose narrative — not bullet points, not JSON — that tells the story of what changed and why. Great for changelogs, sprint recaps, or onboarding a teammate.
+Select 2–20 commits and get a concise summary with bullet points of key changes. Optionally generate a Mermaid flowchart diagram showing the progression of changes. Great for changelogs, sprint recaps, or onboarding a teammate.
 
 ### Background Monitoring
 
@@ -89,7 +89,7 @@ Claude Code is recommended — zero API key setup, uses your existing Claude sub
 ```bash
 # Clone and build
 git clone https://github.com/franzejr/GitNarrate.git
-cd GitNarrate/macos
+cd GitNarrate
 
 swift build
 swift run
@@ -149,16 +149,17 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 ## Project Structure
 
 ```
-macos/
 ├── Package.swift
 ├── Sources/
 │   └── GitNarrate/
 │       ├── App/            # Entry point, menu bar, settings
 │       ├── Models/         # SwiftData models (Repo, Commit, PRReview, SubAgentReview)
+│       ├── Resources/      # App icon, menu bar icon
 │       ├── Services/       # Git, GitHub, AI providers, polling
 │       ├── ViewModels/     # @Observable view models (MVVM)
 │       └── Views/          # SwiftUI views (sidebar, lists, detail, changes)
-└── Tests/
+├── Tests/
+└── assets/                 # Logo and branding images
 ```
 
 ## CI/CD

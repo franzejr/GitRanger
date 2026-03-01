@@ -2,6 +2,7 @@ import SwiftUI
 
 // MARK: - Markdown Rendering
 
+@MainActor
 extension PRReviewView {
     private enum MarkdownBlock {
         case line(String)

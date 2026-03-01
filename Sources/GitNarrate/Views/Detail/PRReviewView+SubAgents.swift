@@ -3,6 +3,7 @@ import SwiftUI
 
 // MARK: - Sub-Agent Review Sections
 
+@MainActor
 extension PRReviewView {
     var disabledAgentSet: Set<String> {
         Set(repo?.disabledAgents ?? [])

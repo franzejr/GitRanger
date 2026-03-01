@@ -208,7 +208,7 @@ final class PRReviewViewModel {
 
     // MARK: - Verdict Parsing
 
-    static func parseVerdict(_ text: String) -> Bool? {
+    nonisolated static func parseVerdict(_ text: String) -> Bool? {
         guard let firstLine = text
             .components(separatedBy: "\n")
             .first?
@@ -221,7 +221,7 @@ final class PRReviewViewModel {
         return nil
     }
 
-    static func stripVerdictLine(_ text: String) -> String {
+    nonisolated static func stripVerdictLine(_ text: String) -> String {
         let lines = text.components(separatedBy: "\n")
         guard let first = lines
             .first?
