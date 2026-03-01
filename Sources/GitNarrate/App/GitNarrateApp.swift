@@ -73,7 +73,7 @@ struct GitNarrateApp: App {
             SettingsView()
         }
 
-        MenuBarExtra("GitNarrate", systemImage: "text.book.closed") {
+        MenuBarExtra {
             if pollService.isPolling {
                 Label("Syncing...", systemImage: "arrow.triangle.2.circlepath")
             } else if let lastPoll = pollService.lastPollDate {
@@ -96,6 +96,26 @@ struct GitNarrateApp: App {
             SettingsLink {
                 Text("Settings...")
             }
+        } label: {
+            menuBarLabel
         }
+    }
+
+    private var menuBarLabel: some View {
+        let image: NSImage = {
+            guard let url = Bundle.module.url(
+                forResource: "MenuBarIcon", withExtension: "png"
+            ), let img = NSImage(contentsOf: url) else {
+                return NSImage(
+                    systemSymbolName: "text.book.closed",
+                    accessibilityDescription: "GitNarrate"
+                ) ?? NSImage()
+            }
+            img.size = NSSize(width: 18, height: 18)
+            img.isTemplate = true
+            return img
+        }()
+
+        return Image(nsImage: image)
     }
 }

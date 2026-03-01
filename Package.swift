@@ -12,7 +12,9 @@ let package = Package(
             name: "GitNarrate",
             path: "Sources/GitNarrate",
             resources: [
-                .copy("Resources/AppIcon.icns")
+                .copy("Resources/AppIcon.icns"),
+                .copy("Resources/MenuBarIcon.png"),
+                .copy("Resources/MenuBarIcon@2x.png")
             ]
         ),
         .testTarget(
