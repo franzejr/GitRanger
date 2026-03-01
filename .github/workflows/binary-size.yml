@@ -4,15 +4,13 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'macos/**'
+      - 'Sources/**'
+      - 'Package.swift'
 
 jobs:
   size:
     name: Track Binary Size
     runs-on: macos-14
-    defaults:
-      run:
-        working-directory: macos
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +34,7 @@ jobs:
 
       - name: Build base branch (release)
         id: base
-        working-directory: __base/macos
+        working-directory: __base
         run: |
           swift build -c release 2>/dev/null
           if [ -f .build/release/GitNarrate ]; then
