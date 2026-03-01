@@ -171,6 +171,11 @@ struct CommitDiff {
 
 // MARK: - Pull Request Types
 
+struct PRReviewStatus {
+    let login: String
+    let state: String // APPROVED, CHANGES_REQUESTED, COMMENTED, PENDING
+}
+
 struct PullRequest: Identifiable {
     let number: Int
     let title: String
@@ -186,8 +191,22 @@ struct PullRequest: Identifiable {
     let changedFiles: Int
     let url: String
     let isDraft: Bool
+    var reviewDecision: String
+    var reviewRequests: [String]
+    var latestReviews: [PRReviewStatus]
 
     var id: Int { number }
+
+    var isApproved: Bool { reviewDecision == "APPROVED" }
+    var hasChangesRequested: Bool { reviewDecision == "CHANGES_REQUESTED" }
+
+    func isAwaitingReview(by login: String) -> Bool {
+        reviewRequests.contains(login)
+    }
+
+    func wasReviewedBy(_ login: String) -> PRReviewStatus? {
+        latestReviews.first { $0.login == login }
+    }
 }
 
 struct PRDetail {

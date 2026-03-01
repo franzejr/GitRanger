@@ -12,45 +12,120 @@ struct PRListView: View {
         VStack(spacing: 0) {
             headerBar
 
+            filterPicker
+
             Divider()
 
-            if viewModel.isLoading {
-                ProgressView("Loading pull requests...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.error {
-                errorView(error)
-            } else if viewModel.pullRequests.isEmpty {
-                ContentUnavailableView(
-                    "No Open Pull Requests",
-                    systemImage: "arrow.triangle.pull",
-                    description: Text("This repository has no open pull requests.")
-                )
-            } else {
-                List(selection: $selectedPRNumber) {
-                    ForEach(viewModel.pullRequests) { pr in
-                        PRItemView(pr: pr, isSelected: selectedPRNumber == pr.number)
-                            .tag(pr.number)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedPRNumber = pr.number
-                                onSelectPR(pr)
-                            }
-                    }
-                }
-                .listStyle(.plain)
-                .onChange(of: selectedPRNumber) { _, newNumber in
-                    guard let newNumber,
-                          let pr = viewModel.pullRequests.first(where: { $0.number == newNumber })
-                    else { return }
-                    onSelectPR(pr)
+            Group {
+                if viewModel.isLoading {
+                    ProgressView("Loading pull requests...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = viewModel.error {
+                    errorView(error)
+                } else if viewModel.pullRequests.isEmpty {
+                    ContentUnavailableView(
+                        "No Open Pull Requests",
+                        systemImage: "arrow.triangle.pull",
+                        description: Text(emptyMessage)
+                    )
+                } else {
+                    prList
                 }
             }
+            .frame(maxHeight: .infinity)
         }
         .navigationTitle("Pull Requests")
-        .navigationSubtitle("\(viewModel.pullRequests.count) open")
+        .navigationSubtitle(navigationSubtitle)
         .onAppear {
             guard let repo, viewModel.pullRequests.isEmpty else { return }
             Task { await viewModel.loadPullRequests(repo: repo) }
+        }
+    }
+
+    private var navigationSubtitle: String {
+        let count = viewModel.pullRequests.count
+        switch viewModel.filterMode {
+        case .all: return "\(count) open"
+        case .pendingMyReview: return "\(count) pending"
+        case .merged: return "\(count) merged"
+        }
+    }
+
+    private var emptyMessage: String {
+        switch viewModel.filterMode {
+        case .all:
+            "This repository has no open pull requests."
+        case .pendingMyReview:
+            "No pull requests are waiting for your review."
+        case .merged:
+            "No merged pull requests found."
+        }
+    }
+
+    private var prList: some View {
+        List(selection: $selectedPRNumber) {
+            ForEach(viewModel.pullRequests) { pr in
+                PRItemView(
+                    pr: pr,
+                    isSelected: selectedPRNumber == pr.number,
+                    currentUser: viewModel.currentGhUser
+                )
+                .tag(pr.number)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedPRNumber = pr.number
+                    onSelectPR(pr)
+                }
+            }
+
+            if viewModel.hasMore {
+                loadMoreButton
+            }
+        }
+        .listStyle(.plain)
+        .onChange(of: selectedPRNumber) { _, newNumber in
+            guard let newNumber,
+                  let pr = viewModel.pullRequests.first(where: { $0.number == newNumber })
+            else { return }
+            onSelectPR(pr)
+        }
+    }
+
+    private var loadMoreButton: some View {
+        Button {
+            guard let repo else { return }
+            Task { await viewModel.loadMore(repo: repo) }
+        } label: {
+            if viewModel.isLoadingMore {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 14, height: 14)
+                    Text("Loading more...")
+                        .font(.caption)
+                }
+            } else {
+                Text("Load More")
+                    .font(.caption)
+            }
+        }
+        .disabled(viewModel.isLoadingMore)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
+    private var filterPicker: some View {
+        Picker("", selection: $viewModel.filterMode) {
+            ForEach(PRFilterMode.allCases, id: \.self) { mode in
+                Text(mode.rawValue).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .onChange(of: viewModel.filterMode) { _, _ in
+            guard let repo else { return }
+            Task { await viewModel.refresh(repo: repo) }
         }
     }
 

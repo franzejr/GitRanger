@@ -3,6 +3,7 @@ import SwiftUI
 struct PRItemView: View {
     let pr: PullRequest
     var isSelected: Bool = false
+    var currentUser: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -18,13 +19,10 @@ struct PRItemView: View {
 
                 Spacer()
 
+                reviewBadge
+
                 if pr.isDraft {
-                    Text("DRAFT")
-                        .font(.system(.caption2, weight: .semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
+                    draftBadge
                 }
             }
 
@@ -49,6 +47,8 @@ struct PRItemView: View {
 
                 Spacer()
 
+                reviewerInfo
+
                 if pr.additions > 0 {
                     Text("+\(pr.additions)")
                         .font(.caption)
@@ -68,5 +68,62 @@ struct PRItemView: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         )
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var reviewBadge: some View {
+        if pr.state == "MERGED" {
+            badge("MERGED", icon: "arrow.triangle.merge", color: .purple)
+        } else if pr.isApproved {
+            badge("APPROVED", icon: "checkmark.circle.fill", color: .green)
+        } else if pr.hasChangesRequested {
+            badge("CHANGES", icon: "exclamationmark.circle.fill", color: .orange)
+        } else if let user = currentUser, pr.isAwaitingReview(by: user) {
+            badge("REVIEW", icon: "clock.fill", color: .yellow)
+        }
+    }
+
+    private var draftBadge: some View {
+        Text("DRAFT")
+            .font(.system(.caption2, weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.quaternary)
+            .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private var reviewerInfo: some View {
+        if let user = currentUser, let status = pr.wasReviewedBy(user) {
+            Text("You: \(status.state.capitalized)")
+                .font(.caption2)
+                .foregroundStyle(reviewColor(for: status.state))
+        }
+    }
+
+    private func badge(
+        _ label: String,
+        icon: String,
+        color: Color
+    ) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(label)
+                .font(.system(.caption2, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.15))
+        .clipShape(Capsule())
+    }
+
+    private func reviewColor(for state: String) -> Color {
+        switch state {
+        case "APPROVED": .green
+        case "CHANGES_REQUESTED": .orange
+        default: .secondary
+        }
     }
 }

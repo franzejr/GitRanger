@@ -101,21 +101,42 @@ final class GitHubService {
 
     // MARK: - List PRs
 
-    func listPullRequests(repoUrl: String, account: String? = nil) async throws -> [PullRequest] {
+    static let prPageSize = 30
+
+    func listPullRequests(repoUrl: String, limit: Int = prPageSize, account: String? = nil) async throws -> [PullRequest] {
+        try await fetchPRList(repoUrl: repoUrl, state: "open", limit: limit, account: account)
+    }
+
+    func listPendingReviews(repoUrl: String, limit: Int = prPageSize, account: String? = nil) async throws -> [PullRequest] {
+        try await fetchPRList(repoUrl: repoUrl, state: "open", search: "review-requested:@me", limit: limit, account: account)
+    }
+
+    func listMergedPRs(repoUrl: String, limit: Int = prPageSize, account: String? = nil) async throws -> [PullRequest] {
+        try await fetchPRList(repoUrl: repoUrl, state: "merged", limit: limit, account: account)
+    }
+
+    private func fetchPRList(
+        repoUrl: String,
+        state: String,
+        search: String? = nil,
+        limit: Int = prPageSize,
+        account: String? = nil
+    ) async throws -> [PullRequest] {
         guard let slug = extractRepoSlug(url: repoUrl) else {
             throw GitHubError.repoNotFound(repoUrl)
         }
 
         let fields = "number,title,author,state,headRefName,headRefOid,baseRefName," +
-                     "createdAt,updatedAt,additions,deletions,changedFiles,url,isDraft"
+                     "createdAt,updatedAt,additions,deletions,changedFiles,url,isDraft," +
+                     "reviewDecision,latestReviews,reviewRequests"
+
+        var args = ["pr", "list", "-R", slug, "--state", state, "--json", fields, "--limit", "\(limit)"]
+        if let search {
+            args += ["--search", search]
+        }
 
         let env = await shellEnv(account: account)
-        let output = try await shell.execute(
-            "gh",
-            arguments: ["pr", "list", "-R", slug, "--state", "open", "--json", fields, "--limit", "50"],
-            environment: env,
-            timeout: 30
-        )
+        let output = try await shell.execute("gh", arguments: args, environment: env, timeout: 30)
 
         guard let data = output.data(using: .utf8) else {
             throw GitHubError.invalidResponse("Empty output from gh pr list")
@@ -123,6 +144,19 @@ final class GitHubService {
 
         let dtos = try JSONDecoder.ghDecoder.decode([PRListDTO].self, from: data)
         return dtos.map { $0.toPullRequest() }
+    }
+
+    // MARK: - Current User
+
+    func currentUser(account: String? = nil) async -> String? {
+        let env = await shellEnv(account: account)
+        guard let result = try? await shell.run(
+            "gh", arguments: ["api", "user", "--jq", ".login"],
+            environment: env, timeout: 10
+        ), result.exitCode == 0 else { return nil }
+
+        let login = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return login.isEmpty ? nil : login
     }
 
     // MARK: - PR Diff
@@ -196,14 +230,34 @@ private struct PRListDTO: Codable {
     let changedFiles: Int
     let url: String
     let isDraft: Bool
+    let reviewDecision: String?
+    let latestReviews: [ReviewDTO]?
+    let reviewRequests: [ReviewRequestDTO]?
 
     struct AuthorDTO: Codable {
         let login: String
     }
 
+    struct ReviewDTO: Codable {
+        let author: AuthorDTO
+        let state: String
+    }
+
+    struct ReviewRequestDTO: Codable {
+        let login: String?
+        let name: String?
+    }
+
     func toPullRequest() -> PullRequest {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let reviews = (latestReviews ?? []).map {
+            PRReviewStatus(login: $0.author.login, state: $0.state)
+        }
+        let requests = (reviewRequests ?? []).compactMap {
+            $0.login
+        }
 
         return PullRequest(
             number: number,
@@ -219,7 +273,10 @@ private struct PRListDTO: Codable {
             deletions: deletions,
             changedFiles: changedFiles,
             url: url,
-            isDraft: isDraft
+            isDraft: isDraft,
+            reviewDecision: reviewDecision ?? "",
+            reviewRequests: requests,
+            latestReviews: reviews
         )
     }
 }
