@@ -1,23 +1,27 @@
 # GitNarrate
 
 ## Project Overview
-GitNarrate is an open-source tool that narrates the full history of any git project with AI-powered summaries and real-time monitoring. It has two platforms:
+GitNarrate is an open-source native macOS app that narrates the full history of any git project with AI-powered summaries and real-time monitoring.
 
-1. **macOS App** — Native SwiftUI, full window app (3-column NavigationSplitView)
-2. **Web App** — React 18 + Vite + Tailwind (frontend) + Node.js + Express + TypeScript (backend)
-
-## Monorepo Structure
+## Project Structure
 ```
 gitnarrate/
-├── macos/          # SwiftUI macOS app (Xcode project)
-├── web/
-│   ├── client/     # React frontend (Vite + Tailwind)
-│   └── server/     # Express backend (TypeScript)
-├── docs/           # Shared documentation
-├── CLAUDE.md       # This file
+├── Package.swift       # Swift Package Manager manifest
+├── Sources/            # SwiftUI macOS app source
+│   └── GitNarrate/
+│       ├── App/        # App entry point
+│       ├── Models/     # SwiftData models + AI types
+│       ├── Services/   # Git, GitHub, AI, Shell services
+│       ├── ViewModels/ # @Observable view models
+│       └── Views/      # SwiftUI views
+├── Tests/              # XCTest + Swift Testing
+├── docs/               # Documentation
+├── scripts/            # Build/release scripts
+├── .swiftlint.yml      # SwiftLint config
+├── CLAUDE.md           # This file
 ├── README.md
 ├── CONTRIBUTING.md
-└── LICENSE          # MIT
+└── LICENSE             # MIT
 ```
 
 ## Architecture Document
@@ -58,10 +62,10 @@ cat diff.txt | claude -p "Analyze this commit..." --output-format json --allowed
 - OpenAI: HTTPS to api.openai.com/v1/chat/completions with json_object format
 - Ollama: HTTP to localhost:11434/api/generate with format: "json"
 
-## macOS App Guidelines
+## App Guidelines
 - **SwiftUI** with NavigationSplitView (3-column: sidebar, commit list, detail)
-- **SwiftData** for persistence (@Model classes: Repo, Commit, Notification)
-- **MVVM** architecture (ViewModels as @Observable classes)
+- **SwiftData** for persistence (@Model classes: Repo, Commit, PRReview, SubAgentReview)
+- **MVVM** architecture (ViewModels as @MainActor @Observable classes)
 - **Swift Concurrency** (async/await, actors for background work)
 - **Minimum target**: macOS 14 (Sonoma) — required for SwiftData
 - **Shell git** via Process() for git operations
@@ -69,22 +73,14 @@ cat diff.txt | claude -p "Analyze this commit..." --output-format json --allowed
 - **Sparkle 2** for auto-updates
 - **MenuBarExtra** for status icon
 
-## Web App Guidelines
-- **Frontend**: React 18 + Vite + Tailwind CSS + Zustand (state) + TypeScript
-- **Backend**: Express + TypeScript + better-sqlite3 + Socket.io + BullMQ + Redis
-- **Git**: simple-git npm package
-- **Deploy**: Docker + docker-compose
-
 ## Code Style
 - Swift: Follow Apple's Swift API Design Guidelines
-- TypeScript: ESLint + Prettier, strict mode
 - Use protocols/interfaces for all services (testable, mockable)
 - Descriptive variable names, no abbreviations
 - Comments for non-obvious logic only
 
 ## Testing
-- macOS: XCTest + Swift Testing framework
-- Web: Vitest (frontend) + Jest (backend)
+- XCTest + Swift Testing framework
 - Mock all AI services in tests (never call real APIs in tests)
 
 ## Git Conventions
