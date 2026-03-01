@@ -67,6 +67,7 @@ enum ReviewTab: String, CaseIterable {
     case secondReview = "Second Review"
 }
 
+@MainActor
 struct PRReviewView: View {
     @Bindable var viewModel: PRReviewViewModel
     var repo: Repo?

@@ -7,6 +7,7 @@ enum ContentMode: String, CaseIterable {
     case changes = "Changes"
 }
 
+@MainActor
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
 

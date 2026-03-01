@@ -66,7 +66,8 @@ final class RepoListViewModel {
         let localPath = try await gitService.clone(
             url: url, repoId: repoId
         ) { [weak self] progress in
-            Task { @MainActor in self?.importDetail = progress }
+            let vm = self
+            Task { @MainActor in vm?.importDetail = progress }
         }
 
         try Task.checkCancellation()
