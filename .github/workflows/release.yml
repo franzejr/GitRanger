@@ -22,8 +22,11 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           TAG="${GITHUB_REF#refs/tags/}"
+          BUILD=$(git rev-list --count HEAD)
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "BUILD=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION (build $BUILD)"
 
       - name: Generate changelog
         id: changelog
@@ -89,7 +92,7 @@ jobs:
             <key>CFBundleName</key>
             <string>GitNarrate</string>
             <key>CFBundleVersion</key>
-            <string>${{ steps.version.outputs.VERSION }}</string>
+            <string>${{ steps.version.outputs.BUILD }}</string>
             <key>CFBundleShortVersionString</key>
             <string>${{ steps.version.outputs.VERSION }}</string>
             <key>CFBundlePackageType</key>

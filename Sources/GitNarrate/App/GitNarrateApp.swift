@@ -26,11 +26,23 @@ extension Bundle {
 struct GitNarrateApp: App {
     @State private var pollService = PollService()
 
+    private static let appVersion: String = {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        if let build, !build.isEmpty, build != version {
+            return "\(version) (\(build))"
+        }
+        return version
+    }()
+
     private func showAboutPanel() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+
         var options: [NSApplication.AboutPanelOptionKey: Any] = [
             .applicationName: "GitNarrate",
-            .applicationVersion: "1.0.0",
-            .version: "1",
+            .applicationVersion: version,
+            .version: build,
             .credits: NSAttributedString(
                 string: "AI-powered git history narration and code review.",
                 attributes: [
