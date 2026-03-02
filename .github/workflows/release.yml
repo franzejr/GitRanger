@@ -52,13 +52,8 @@ jobs:
             echo ""
             echo "1. Download \`GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip\` below"
             echo "2. Unzip and move \`GitNarrate.app\` to your Applications folder"
-            echo "3. Before opening, run in Terminal:"
-            echo "   \`\`\`"
-            echo "   xattr -cr /Applications/GitNarrate.app"
-            echo "   \`\`\`"
-            echo "4. Open GitNarrate from Applications"
-            echo ""
-            echo "> The \`xattr\` step is needed because the app is not yet code-signed with an Apple Developer certificate. macOS Gatekeeper blocks unsigned apps downloaded from the internet."
+            echo "3. On first launch, **right-click** the app and choose **Open** (macOS blocks unsigned apps on double-click)"
+            echo "4. Click **Open** in the confirmation dialog"
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -109,6 +104,9 @@ jobs:
           if [ -f Sources/GitNarrate/Resources/AppIcon.icns ]; then
             cp Sources/GitNarrate/Resources/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
           fi
+
+      - name: Ad-hoc code sign
+        run: codesign --sign "-" --force --deep GitNarrate.app
 
       - name: Create ZIP archive
         run: |
