@@ -2,6 +2,26 @@ import AppKit
 import SwiftData
 import SwiftUI
 
+private class _BundleFinder {}
+
+extension Bundle {
+    static var safeModule: Bundle? {
+        let bundleName = "GitNarrate_GitNarrate"
+        let candidates: [URL?] = [
+            Bundle.main.resourceURL,
+            Bundle(for: _BundleFinder.self).resourceURL,
+            Bundle.main.bundleURL
+        ]
+        for candidate in candidates {
+            if let url = candidate?.appendingPathComponent(bundleName + ".bundle"),
+               let bundle = Bundle(url: url) {
+                return bundle
+            }
+        }
+        return nil
+    }
+}
+
 @main
 struct GitNarrateApp: App {
     @State private var pollService = PollService()
@@ -20,7 +40,7 @@ struct GitNarrateApp: App {
             )
         ]
 
-        if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+        if let iconURL = Bundle.safeModule?.url(forResource: "AppIcon", withExtension: "icns"),
            let icon = NSImage(contentsOf: iconURL) {
             options[.applicationIcon] = icon
         }
@@ -51,7 +71,7 @@ struct GitNarrateApp: App {
                     NSApplication.shared.activate(ignoringOtherApps: true)
 
                     // Set app icon from bundled resource
-                    if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+                    if let iconURL = Bundle.safeModule?.url(forResource: "AppIcon", withExtension: "icns"),
                        let icon = NSImage(contentsOf: iconURL) {
                         NSApplication.shared.applicationIconImage = icon
                     }
@@ -103,7 +123,7 @@ struct GitNarrateApp: App {
 
     private var menuBarLabel: some View {
         let image: NSImage = {
-            guard let url = Bundle.module.url(
+            guard let url = Bundle.safeModule?.url(
                 forResource: "MenuBarIcon", withExtension: "png"
             ), let img = NSImage(contentsOf: url) else {
                 return NSImage(

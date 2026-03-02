@@ -69,8 +69,12 @@ jobs:
           # Copy bundled resources
           RESOURCES_DIR="GitNarrate.app/Contents/Resources"
           mkdir -p "$RESOURCES_DIR"
-          if [ -d .build/release/GitNarrate_GitNarrate.bundle ]; then
-            cp -R .build/release/GitNarrate_GitNarrate.bundle "$RESOURCES_DIR/"
+          BUNDLE_PATH=$(find .build/release -name "GitNarrate_GitNarrate.bundle" -type d | head -1)
+          if [ -n "$BUNDLE_PATH" ]; then
+            echo "Found resource bundle at: $BUNDLE_PATH"
+            cp -R "$BUNDLE_PATH" "$RESOURCES_DIR/"
+          else
+            echo "WARNING: Resource bundle not found"
           fi
 
           cat > "GitNarrate.app/Contents/Info.plist" << PLIST
