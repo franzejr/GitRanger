@@ -147,7 +147,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GitNarrate-${{ steps.version.outputs.VERSION }}-build${{ steps.version.outputs.BUILD }}-macos
           path: GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
