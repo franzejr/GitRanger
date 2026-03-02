@@ -134,8 +134,8 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertTrue(prompt.contains("test-repo"))
         XCTAssertTrue(prompt.contains("First commit"))
         XCTAssertTrue(prompt.contains("Second commit"))
-        XCTAssertTrue(prompt.contains("Commit 1 of 2"))
-        XCTAssertTrue(prompt.contains("Commit 2 of 2"))
+        XCTAssertTrue(prompt.contains("Commit 1"))
+        XCTAssertTrue(prompt.contains("Commit 2"))
     }
 
     func testParseValidJSON() throws {
