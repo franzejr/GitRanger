@@ -2,7 +2,6 @@ name: Release
 
 on:
   push:
-    branches: [main]
     tags:
       - 'v*'
 
@@ -21,66 +20,45 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            TAG="${GITHUB_REF#refs/tags/}"
-            PRERELEASE="false"
-          else
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            DATE=$(date -u +%Y%m%d)
-            VERSION="0.0.0-dev.${DATE}.${SHORT_SHA}"
-            TAG="dev-${DATE}-${SHORT_SHA}"
-            PRERELEASE="true"
-          fi
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG="${GITHUB_REF#refs/tags/}"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
-          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         id: changelog
         run: |
-          # Find the previous release tag (or use root if none)
-          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^(v|dev-)' | head -1 || echo "")
+          CURRENT_TAG="${{ steps.version.outputs.TAG }}"
+
+          # Find the previous release tag, excluding the current one and dev tags
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v' | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
 
           if [ -z "$PREV_TAG" ]; then
             RANGE="HEAD"
+            SINCE_LABEL="initial release"
           else
             RANGE="${PREV_TAG}..HEAD"
+            SINCE_LABEL="since ${PREV_TAG}"
           fi
 
-          # Generate categorized changelog from commits
           {
             echo "CHANGELOG<<CHANGELOG_EOF"
-
-            FEATURES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^Add\|^feat\|^Feature" -i 2>/dev/null || echo "")
-            FIXES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^Fix\|^fix:" -i 2>/dev/null || echo "")
-            OTHER=$(git log "$RANGE" --pretty=format:"- %s (%h)" --invert-grep --grep="^Add\|^feat\|^Feature\|^Fix\|^fix:" -i 2>/dev/null || echo "")
-
-            if [ -n "$FEATURES" ]; then
-              echo "### Features"
-              echo "$FEATURES"
-              echo ""
-            fi
-
-            if [ -n "$FIXES" ]; then
-              echo "### Fixes"
-              echo "$FIXES"
-              echo ""
-            fi
-
-            if [ -n "$OTHER" ]; then
-              echo "### Other"
-              echo "$OTHER"
-              echo ""
-            fi
-
-            # If nothing was categorized, just list all commits
-            if [ -z "$FEATURES" ] && [ -z "$FIXES" ] && [ -z "$OTHER" ]; then
-              echo "### Changes"
-              git log "$RANGE" --pretty=format:"- %s (%h)" 2>/dev/null || echo "- Initial release"
-              echo ""
-            fi
-
+            echo "### What's Changed (${SINCE_LABEL})"
+            echo ""
+            git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges 2>/dev/null || echo "- Initial release"
+            echo ""
+            echo ""
+            echo "### Installation"
+            echo ""
+            echo "1. Download \`GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip\` below"
+            echo "2. Unzip and move \`GitNarrate.app\` to your Applications folder"
+            echo "3. Before opening, run in Terminal:"
+            echo "   \`\`\`"
+            echo "   xattr -cr /Applications/GitNarrate.app"
+            echo "   \`\`\`"
+            echo "4. Open GitNarrate from Applications"
+            echo ""
+            echo "> The \`xattr\` step is needed because the app is not yet code-signed with an Apple Developer certificate. macOS Gatekeeper blocks unsigned apps downloaded from the internet."
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -137,20 +115,12 @@ jobs:
           ditto -c -k --keepParent GitNarrate.app \
             "GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip"
 
-      - name: Delete existing dev tag (if re-running)
-        if: steps.version.outputs.PRERELEASE == 'true'
-        run: |
-          TAG="${{ steps.version.outputs.TAG }}"
-          git tag -d "$TAG" 2>/dev/null || true
-          git push origin ":refs/tags/$TAG" 2>/dev/null || true
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
-          name: ${{ steps.version.outputs.PRERELEASE == 'true' && format('Dev Build {0}', steps.version.outputs.VERSION) || steps.version.outputs.VERSION }}
+          name: GitNarrate ${{ steps.version.outputs.VERSION }}
           body: ${{ steps.changelog.outputs.CHANGELOG }}
-          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
           files: GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
