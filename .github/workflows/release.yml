@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
 
@@ -20,21 +21,36 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          TAG="${GITHUB_REF#refs/tags/}"
           BUILD=$(git rev-list --count HEAD)
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Tagged release: v1.0.0 → version=1.0.0, tag=v1.0.0
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            # Auto-release from main: find latest v* tag as base version
+            BASE_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "")
+            if [ -n "$BASE_TAG" ]; then
+              BASE_VERSION="${BASE_TAG#v}"
+            else
+              BASE_VERSION="0.1.0"
+            fi
+            VERSION="${BASE_VERSION}"
+            TAG="v${BASE_VERSION}+${BUILD}"
+          fi
+
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
           echo "BUILD=$BUILD" >> "$GITHUB_OUTPUT"
-          echo "Version: $VERSION (build $BUILD)"
+          echo "Version: $VERSION (build $BUILD), tag: $TAG"
 
       - name: Generate changelog
         id: changelog
         run: |
           CURRENT_TAG="${{ steps.version.outputs.TAG }}"
 
-          # Find the previous release tag, excluding the current one and dev tags
-          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v' | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
+          # Find the previous release tag, excluding current and build tags
+          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v[0-9]' | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
 
           if [ -z "$PREV_TAG" ]; then
             RANGE="HEAD"
@@ -124,7 +140,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
-          name: GitNarrate ${{ steps.version.outputs.VERSION }}
+          name: GitNarrate ${{ steps.version.outputs.VERSION }} (build ${{ steps.version.outputs.BUILD }})
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           files: GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
         env:
@@ -133,5 +149,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GitNarrate-${{ steps.version.outputs.VERSION }}-macos
+          name: GitNarrate-${{ steps.version.outputs.VERSION }}-build${{ steps.version.outputs.BUILD }}-macos
           path: GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
