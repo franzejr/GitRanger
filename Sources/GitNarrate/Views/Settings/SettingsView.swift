@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage("openAIModel") private var openAIModel = "gpt-4o"
     @AppStorage("ollamaModel") private var ollamaModel = "llama3.2"
     @AppStorage("ollamaURL") private var ollamaURL = "http://localhost:11434"
+    @AppStorage("claudePath") private var claudePath = ""
     @AppStorage("pollInterval") private var pollInterval = 300
     @AppStorage("prReviewPrompt") private var prReviewPrompt = ""
 
@@ -29,7 +30,7 @@ struct SettingsView: View {
             generalTab
                 .tabItem { Label("General", systemImage: "gear") }
         }
-        .frame(width: 550, height: 520)
+        .frame(width: 600, height: 560)
     }
 
     // MARK: - AI Provider Tab
@@ -39,16 +40,16 @@ struct SettingsView: View {
             Section("AI Provider") {
                 Picker("Provider", selection: $aiProvider) {
                     ForEach(AIProvider.allCases, id: \.rawValue) { provider in
-                        VStack(alignment: .leading) {
-                            Text(provider.displayName)
-                            Text(provider.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .tag(provider.rawValue)
+                        Text(provider.displayName)
+                            .tag(provider.rawValue)
                     }
                 }
                 .pickerStyle(.radioGroup)
+
+                Text(selectedProvider.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 8) {
                     if let available = settingsVM.isAvailable(selectedProvider) {
@@ -69,6 +70,7 @@ struct SettingsView: View {
 
             providerConfigSection
         }
+        .formStyle(.grouped)
         .padding()
     }
 
@@ -89,6 +91,35 @@ struct SettingsView: View {
                         Text("claude login")
                             .font(.system(.body, design: .monospaced))
                     }
+                }
+
+                Text("Binary path (leave empty for auto-detect):")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    TextField(
+                        "Auto-detect",
+                        text: $claudePath
+                    )
+                    .font(.system(.body, design: .monospaced))
+
+                    Button("Browse...") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = true
+                        panel.canChooseDirectories = false
+                        panel.allowsMultipleSelection = false
+                        panel.message = "Select the claude binary"
+                        if panel.runModal() == .OK, let url = panel.url {
+                            claudePath = url.path
+                        }
+                    }
+                }
+
+                if !claudePath.isEmpty {
+                    Text("Using: \(claudePath)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
