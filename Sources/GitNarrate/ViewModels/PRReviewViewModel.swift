@@ -46,6 +46,7 @@ final class PRReviewViewModel {
     }
 
     let githubService = GitHubService.shared
+    let gitlabService = GitLabService.shared
     var modelContext: ModelContext?
 
     enum AgentTaskResult: Sendable {
@@ -87,11 +88,19 @@ final class PRReviewViewModel {
                 headSha: pr.headRefOid
             )
 
-            diff = try await githubService.getPRDiff(
-                repoUrl: repo.url,
-                prNumber: pr.number,
-                account: repo.ghAccount
-            )
+            if gitlabService.isGitLabRepo(url: repo.url) {
+                diff = try await gitlabService.getMRDiff(
+                    repoUrl: repo.url,
+                    mrNumber: pr.number,
+                    host: repo.glHost
+                )
+            } else {
+                diff = try await githubService.getPRDiff(
+                    repoUrl: repo.url,
+                    prNumber: pr.number,
+                    account: repo.ghAccount
+                )
+            }
         } catch {
             self.error = error.localizedDescription
         }

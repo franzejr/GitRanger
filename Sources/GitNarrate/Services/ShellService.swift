@@ -56,6 +56,24 @@ final class ShellService {
         )
     }
 
+    /// Run a binary directly by its full path (bypasses /usr/bin/env)
+    func runDirect(
+        _ executablePath: String,
+        arguments: [String] = [],
+        cwd: URL? = nil,
+        environment: [String: String]? = nil,
+        stdinData: Data? = nil,
+        timeout: TimeInterval = 60
+    ) async throws -> ShellResult {
+        let config = ProcessConfig(
+            executable: executablePath, arguments: arguments,
+            cwd: cwd, environment: environment, stdinData: stdinData
+        )
+        return try await runProcess(
+            config: config, timeout: timeout, directExec: true
+        )
+    }
+
     /// Convenience: run and throw on non-zero exit
     func execute(
         _ executable: String,
@@ -83,6 +101,7 @@ final class ShellService {
     private func runProcess(
         config: ProcessConfig,
         timeout: TimeInterval,
+        directExec: Bool = false,
         stderrHandler: (@Sendable (String) -> Void)? = nil
     ) async throws -> ShellResult {
         try await withCheckedThrowingContinuation { continuation in
@@ -92,7 +111,8 @@ final class ShellService {
 
             configureProcess(
                 process, config: config,
-                stdoutPipe: stdoutPipe, stderrPipe: stderrPipe
+                stdoutPipe: stdoutPipe, stderrPipe: stderrPipe,
+                directExec: directExec
             )
 
             let accumulator = stderrHandler.map { handler -> LockedData in
@@ -140,10 +160,16 @@ final class ShellService {
         _ process: Process,
         config: ProcessConfig,
         stdoutPipe: Pipe,
-        stderrPipe: Pipe
+        stderrPipe: Pipe,
+        directExec: Bool = false
     ) {
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [config.executable] + config.arguments
+        if directExec {
+            process.executableURL = URL(fileURLWithPath: config.executable)
+            process.arguments = config.arguments
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [config.executable] + config.arguments
+        }
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 

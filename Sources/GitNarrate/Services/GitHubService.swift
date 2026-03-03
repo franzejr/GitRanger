@@ -340,7 +340,7 @@ enum GitHubError: LocalizedError {
         case .ghNotAuthenticated:
             "GitHub CLI is not authenticated. Run: gh auth login"
         case .notAGitHubRepo:
-            "PR review is only available for GitHub repositories."
+            "PR/MR review is only available for GitHub and GitLab repositories."
         case .repoNotFound(let url):
             "Could not find this repository on GitHub. It may be private, renamed, or deleted.\n\nURL: \(url)"
         case .invalidResponse(let detail):

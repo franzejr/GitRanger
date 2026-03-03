@@ -6,7 +6,16 @@ final class ClaudeCodeService: AIServiceProtocol {
 
     private let shell = ShellService.shared
 
+    private var claudeBinary: String {
+        let custom = UserDefaults.standard.string(forKey: "claudePath") ?? ""
+        return custom.isEmpty ? "claude" : custom
+    }
+
     func isAvailable() async -> Bool {
+        let binary = claudeBinary
+        if binary != "claude" {
+            return FileManager.default.isExecutableFile(atPath: binary)
+        }
         do {
             let output = try await shell.execute("which", arguments: ["claude"])
             return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -53,22 +62,10 @@ final class ClaudeCodeService: AIServiceProtocol {
         timeout: TimeInterval,
         useTools: Bool
     ) async throws -> String {
-        var arguments = [
-            "-p", "-",
-            "--output-format", "json",
-            "--model", "haiku",
-            "--no-session-persistence"
-        ]
+        let arguments = buildArguments(
+            useTools: useTools, repoPath: repoPath
+        )
 
-        if useTools {
-            arguments += ["--allowedTools", "Read,Grep,Glob"]
-        }
-
-        if let repoPath {
-            arguments += ["--add-dir", repoPath.path]
-        }
-
-        // Strip CLAUDECODE env var to avoid recursion if run from within Claude Code
         var env = ProcessInfo.processInfo.environment
         env.removeValue(forKey: "CLAUDECODE")
 
@@ -76,40 +73,91 @@ final class ClaudeCodeService: AIServiceProtocol {
             throw AIError.invalidResponse("Could not encode prompt")
         }
 
-        let result = try await shell.run(
-            "claude",
-            arguments: arguments,
-            environment: env,
-            stdinData: stdinData,
-            timeout: timeout
+        let result = try await executeClaudeBinary(
+            arguments: arguments, env: env,
+            stdinData: stdinData, timeout: timeout
         )
 
         guard result.exitCode == 0 else {
-            if result.exitCode == 15 {
-                throw AIError.providerError(
-                    "Request timed out. Try selecting fewer commits."
-                )
-            }
-            let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw AIError.providerError(
-                stderr.isEmpty
-                    ? "Claude Code exited with code \(result.exitCode)"
-                    : stderr
+            throw claudeError(result)
+        }
+
+        return try parseClaudeOutput(result.stdout)
+    }
+
+    private func buildArguments(
+        useTools: Bool, repoPath: URL?
+    ) -> [String] {
+        var args = [
+            "-p", "-",
+            "--output-format", "json",
+            "--model", "haiku",
+            "--no-session-persistence"
+        ]
+        if useTools {
+            args += ["--allowedTools", "Read,Grep,Glob"]
+        }
+        if let repoPath {
+            args += ["--add-dir", repoPath.path]
+        }
+        return args
+    }
+
+    private func executeClaudeBinary(
+        arguments: [String], env: [String: String],
+        stdinData: Data, timeout: TimeInterval
+    ) async throws -> ShellService.ShellResult {
+        let binary = claudeBinary
+        if binary.contains("/") {
+            return try await shell.runDirect(
+                binary, arguments: arguments,
+                environment: env, stdinData: stdinData,
+                timeout: timeout
             )
         }
+        return try await shell.run(
+            binary, arguments: arguments,
+            environment: env, stdinData: stdinData,
+            timeout: timeout
+        )
+    }
 
-        let stdout = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !stdout.isEmpty, let data = stdout.data(using: .utf8) else {
-            throw AIError.invalidResponse("Empty output from Claude Code")
+    private func claudeError(
+        _ result: ShellService.ShellResult
+    ) -> AIError {
+        if result.exitCode == 15 {
+            return .providerError(
+                "Request timed out. Try selecting fewer commits."
+            )
         }
+        let stderr = result.stderr.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        return .providerError(
+            stderr.isEmpty
+                ? "Claude Code exited with code \(result.exitCode)"
+                : stderr
+        )
+    }
 
-        let envelope = try JSONDecoder().decode(ClaudeCodeResponse.self, from: data)
-
+    private func parseClaudeOutput(
+        _ stdout: String
+    ) throws -> String {
+        let trimmed = stdout.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !trimmed.isEmpty,
+              let data = trimmed.data(using: .utf8) else {
+            throw AIError.invalidResponse(
+                "Empty output from Claude Code"
+            )
+        }
+        let envelope = try JSONDecoder().decode(
+            ClaudeCodeResponse.self, from: data
+        )
         guard !envelope.isError else {
             throw AIError.providerError(envelope.result)
         }
-
         return envelope.result
     }
 }

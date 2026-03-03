@@ -18,13 +18,17 @@ struct PRListView: View {
 
             Group {
                 if viewModel.isLoading {
-                    ProgressView("Loading pull requests...")
+                    ProgressView(viewModel.isGitLabRepo
+                        ? "Loading merge requests..."
+                        : "Loading pull requests...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = viewModel.error {
                     errorView(error)
                 } else if viewModel.pullRequests.isEmpty {
                     ContentUnavailableView(
-                        "No Open Pull Requests",
+                        viewModel.isGitLabRepo
+                            ? "No Open Merge Requests"
+                            : "No Open Pull Requests",
                         systemImage: "arrow.triangle.pull",
                         description: Text(emptyMessage)
                     )
@@ -34,7 +38,7 @@ struct PRListView: View {
             }
             .frame(maxHeight: .infinity)
         }
-        .navigationTitle("Pull Requests")
+        .navigationTitle(viewModel.isGitLabRepo ? "Merge Requests" : "Pull Requests")
         .navigationSubtitle(navigationSubtitle)
         .onAppear {
             guard let repo, viewModel.pullRequests.isEmpty else { return }
@@ -53,15 +57,16 @@ struct PRListView: View {
     }
 
     private var emptyMessage: String {
+        let prLabel = viewModel.isGitLabRepo ? "merge requests" : "pull requests"
         switch viewModel.filterMode {
         case .open:
-            "This repository has no open pull requests."
+            return "This repository has no open \(prLabel)."
         case .closed:
-            "No closed pull requests found."
+            return "No closed \(prLabel) found."
         case .merged:
-            "No merged pull requests found."
+            return "No merged \(prLabel) found."
         case .pendingMyReview:
-            "No pull requests are waiting for your review."
+            return "No \(prLabel) are waiting for your review."
         }
     }
 
@@ -143,7 +148,7 @@ struct PRListView: View {
 
             Spacer()
 
-            if !viewModel.ghAccounts.isEmpty, let repo {
+            if !viewModel.ghAccounts.isEmpty, let repo, viewModel.isGitHubRepo {
                 Picker("", selection: Binding(
                     get: { repo.ghAccount ?? viewModel.ghAccounts.first ?? "" },
                     set: { newAccount in
@@ -160,6 +165,25 @@ struct PRListView: View {
                 .frame(maxWidth: 130)
                 .controlSize(.small)
                 .help("GitHub account for API access")
+            }
+
+            if !viewModel.glHosts.isEmpty, let repo, viewModel.isGitLabRepo {
+                Picker("", selection: Binding(
+                    get: { repo.glHost ?? viewModel.glHosts.first ?? "" },
+                    set: { newHost in
+                        repo.glHost = newHost
+                        repo.updatedAt = Date()
+                        Task { await viewModel.refresh(repo: repo) }
+                    }
+                )) {
+                    ForEach(viewModel.glHosts, id: \.self) { host in
+                        Text(host).tag(host)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 130)
+                .controlSize(.small)
+                .help("GitLab host for API access")
             }
 
             Button {
@@ -215,7 +239,7 @@ struct PRListView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            if viewModel.ghAvailable == false {
+            if viewModel.ghAvailable == false, viewModel.isGitHubRepo {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Install GitHub CLI:")
@@ -223,6 +247,20 @@ struct PRListView: View {
                         Text("brew install gh")
                             .font(.system(.caption, design: .monospaced))
                         Text("gh auth login")
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                }
+                .frame(maxWidth: 250)
+            }
+
+            if viewModel.glAvailable == false, viewModel.isGitLabRepo {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Install GitLab CLI:")
+                            .font(.caption.bold())
+                        Text("brew install glab")
+                            .font(.system(.caption, design: .monospaced))
+                        Text("glab auth login")
                             .font(.system(.caption, design: .monospaced))
                     }
                 }

@@ -160,11 +160,20 @@ extension PRReviewViewModel {
     func buildPRInput(
         pr: PullRequest, repo: Repo, diff: String
     ) async throws -> PromptBuilder.PRReviewInput {
-        let prDetail = try await githubService.getPRDetail(
-            repoUrl: repo.url,
-            prNumber: pr.number,
-            account: repo.ghAccount
-        )
+        let prDetail: PRDetail
+        if gitlabService.isGitLabRepo(url: repo.url) {
+            prDetail = try await gitlabService.getMRDetail(
+                repoUrl: repo.url,
+                mrNumber: pr.number,
+                host: repo.glHost
+            )
+        } else {
+            prDetail = try await githubService.getPRDetail(
+                repoUrl: repo.url,
+                prNumber: pr.number,
+                account: repo.ghAccount
+            )
+        }
         return PromptBuilder.PRReviewInput(
             prTitle: pr.title,
             prBody: prDetail.body,

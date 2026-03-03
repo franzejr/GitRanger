@@ -11,6 +11,7 @@ final class Repo {
     var lastPolledAt: Date?
     var reviewPrompt: String?
     var ghAccount: String?
+    var glHost: String?
     var agentPrompts: [String: String]?
     var disabledAgents: [String]?
     var customAgentsData: Data?
