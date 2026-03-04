@@ -131,7 +131,7 @@ final class GitLabService {
         repoUrl: String, limit: Int = mrPageSize, host: String? = nil
     ) async throws -> [PullRequest] {
         try await fetchMRList(
-            repoUrl: repoUrl, state: "opened", limit: limit, host: host
+            repoUrl: repoUrl, filter: .open, limit: limit, host: host
         )
     }
 
@@ -139,7 +139,7 @@ final class GitLabService {
         repoUrl: String, limit: Int = mrPageSize, host: String? = nil
     ) async throws -> [PullRequest] {
         try await fetchMRList(
-            repoUrl: repoUrl, state: "opened",
+            repoUrl: repoUrl, filter: .open,
             reviewer: "@me",
             limit: limit, host: host
         )
@@ -149,7 +149,7 @@ final class GitLabService {
         repoUrl: String, limit: Int = mrPageSize, host: String? = nil
     ) async throws -> [PullRequest] {
         try await fetchMRList(
-            repoUrl: repoUrl, state: "closed", limit: limit, host: host
+            repoUrl: repoUrl, filter: .closed, limit: limit, host: host
         )
     }
 
@@ -157,13 +157,17 @@ final class GitLabService {
         repoUrl: String, limit: Int = mrPageSize, host: String? = nil
     ) async throws -> [PullRequest] {
         try await fetchMRList(
-            repoUrl: repoUrl, state: "merged", limit: limit, host: host
+            repoUrl: repoUrl, filter: .merged, limit: limit, host: host
         )
+    }
+
+    private enum MRFilter {
+        case open, closed, merged
     }
 
     private func fetchMRList(
         repoUrl: String,
-        state: String,
+        filter: MRFilter,
         reviewer: String? = nil,
         limit: Int = mrPageSize,
         host: String? = nil
@@ -172,13 +176,19 @@ final class GitLabService {
             throw GitLabError.repoNotFound(repoUrl)
         }
 
+        // glab uses flags instead of --state:
+        // (default) = open, --closed = closed, --merged = merged
         var args = [
             "mr", "list",
             "-R", slug,
-            "--state", state,
             "--output", "json",
             "--per-page", "\(limit)"
         ]
+        switch filter {
+        case .open: break // default behavior
+        case .closed: args += ["--closed"]
+        case .merged: args += ["--merged"]
+        }
         if let reviewer {
             args += ["--reviewer", reviewer]
         }
