@@ -78,19 +78,15 @@ final class GitLabService {
             return FileManager.default.isExecutableFile(atPath: binary)
         }
         do {
+            // Only check if the binary exists, not auth status.
+            // glab auth status exits 1 even when configured but
+            // token is expired. Actual commands will fail with
+            // proper auth errors if needed.
             let output = try await shell.execute(
                 "which", arguments: ["glab"],
                 environment: baseShellEnv()
             )
-            guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return false
-            }
-            let result = try await runGlab(
-                arguments: ["auth", "status"],
-                environment: baseShellEnv(),
-                timeout: 10
-            )
-            return result.exitCode == 0
+            return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } catch {
             return false
         }
@@ -135,20 +131,27 @@ final class GitLabService {
     }
 
     private func parseHosts(from text: String) -> [String] {
-        // Matches lines like "gitlab.com" or "  - gitlab.com"
-        // glab auth status output varies, but hosts appear on their own lines
-        text.components(separatedBy: "\n")
-            .compactMap { line -> String? in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                // Lines like "gitlab.com" or "gitlab.mycompany.com"
-                if trimmed.contains("Logged in to") {
-                    let parts = trimmed.components(separatedBy: "Logged in to ")
-                    if let hostPart = parts.last {
-                        return hostPart.components(separatedBy: " ").first
-                    }
-                }
-                return nil
+        // glab auth status output has bare hostnames as section headers:
+        //   gitlab.com
+        //     ✓ Logged in to gitlab.com as username
+        // Or when auth fails:
+        //   gitlab.com
+        //     x gitlab.com: API call failed...
+        var hosts: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            // Bare hostname line (no leading symbols like ✓, x, !)
+            if !trimmed.hasPrefix("x ") &&
+                !trimmed.hasPrefix("✓") &&
+                !trimmed.hasPrefix("!") &&
+                !trimmed.hasPrefix("X ") &&
+                !trimmed.contains(" ") &&
+                trimmed.contains(".") {
+                hosts.append(trimmed)
             }
+        }
+        return hosts
     }
 
     // MARK: - List MRs
