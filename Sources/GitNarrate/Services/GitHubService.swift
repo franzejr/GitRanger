@@ -6,22 +6,21 @@ final class GitHubService {
     private let shell = ShellService.shared
     private init() {}
 
+    private var ghBinary: String {
+        let custom = UserDefaults.standard.string(forKey: "ghPath") ?? ""
+        return custom.isEmpty ? "gh" : custom
+    }
+
     // MARK: - Accounts
 
     func listAccounts() async -> [String] {
-        guard let output = try? await shell.execute(
-            "gh", arguments: ["auth", "status"],
+        // gh auth status may write to stderr on success
+        guard let result = try? await runGh(
+            arguments: ["auth", "status"],
             environment: baseShellEnv(), timeout: 10
-        ) else {
-            // gh auth status writes to stderr on success, try run() instead
-            guard let result = try? await shell.run(
-                "gh", arguments: ["auth", "status"],
-                environment: baseShellEnv(), timeout: 10
-            ) else { return [] }
-            let combined = result.stdout + result.stderr
-            return parseAccounts(from: combined)
-        }
-        return parseAccounts(from: output)
+        ) else { return [] }
+        let combined = result.stdout + result.stderr
+        return parseAccounts(from: combined)
     }
 
     private func parseAccounts(from text: String) -> [String] {
@@ -38,8 +37,8 @@ final class GitHubService {
         var env = baseShellEnv()
         if let account {
             // Get token for specific account
-            if let result = try? await shell.run(
-                "gh", arguments: ["auth", "token", "--user", account],
+            if let result = try? await runGh(
+                arguments: ["auth", "token", "--user", account],
                 environment: env, timeout: 5
             ), result.exitCode == 0 {
                 let token = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -54,6 +53,10 @@ final class GitHubService {
     // MARK: - Availability
 
     func isAvailable() async -> Bool {
+        let binary = ghBinary
+        if binary != "gh" {
+            return FileManager.default.isExecutableFile(atPath: binary)
+        }
         do {
             let output = try await shell.execute(
                 "which", arguments: ["gh"],
@@ -62,8 +65,8 @@ final class GitHubService {
             guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return false
             }
-            let result = try await shell.run(
-                "gh", arguments: ["auth", "status"],
+            let result = try await runGh(
+                arguments: ["auth", "status"],
                 environment: baseShellEnv(),
                 timeout: 10
             )
@@ -166,7 +169,7 @@ final class GitHubService {
         }
 
         let env = await shellEnv(account: account)
-        let output = try await shell.execute("gh", arguments: args, environment: env, timeout: 30)
+        let output = try await runGhOrThrow(arguments: args, environment: env, timeout: 30)
 
         guard let data = output.data(using: .utf8) else {
             throw GitHubError.invalidResponse("Empty output from gh pr list")
@@ -180,8 +183,8 @@ final class GitHubService {
 
     func currentUser(account: String? = nil) async -> String? {
         let env = await shellEnv(account: account)
-        guard let result = try? await shell.run(
-            "gh", arguments: ["api", "user", "--jq", ".login"],
+        guard let result = try? await runGh(
+            arguments: ["api", "user", "--jq", ".login"],
             environment: env, timeout: 10
         ), result.exitCode == 0 else { return nil }
 
@@ -197,8 +200,7 @@ final class GitHubService {
         }
 
         let env = await shellEnv(account: account)
-        return try await shell.execute(
-            "gh",
+        return try await runGhOrThrow(
             arguments: ["pr", "diff", "\(prNumber)", "-R", slug],
             environment: env,
             timeout: 30
@@ -213,8 +215,7 @@ final class GitHubService {
         }
 
         let env = await shellEnv(account: account)
-        let output = try await shell.execute(
-            "gh",
+        let output = try await runGhOrThrow(
             arguments: ["pr", "view", "\(prNumber)", "-R", slug, "--json", "title,body"],
             environment: env,
             timeout: 15
@@ -229,6 +230,41 @@ final class GitHubService {
     }
 
     // MARK: - Private
+
+    private func runGh(
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval = 30
+    ) async throws -> ShellService.ShellResult {
+        let binary = ghBinary
+        if binary.contains("/") {
+            return try await shell.runDirect(
+                binary, arguments: arguments,
+                environment: environment, timeout: timeout
+            )
+        }
+        return try await shell.run(
+            binary, arguments: arguments,
+            environment: environment, timeout: timeout
+        )
+    }
+
+    private func runGhOrThrow(
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval = 30
+    ) async throws -> String {
+        let result = try await runGh(
+            arguments: arguments,
+            environment: environment, timeout: timeout
+        )
+        if result.exitCode != 0 {
+            throw ShellError.nonZeroExit(
+                code: result.exitCode, stderr: result.stderr
+            )
+        }
+        return result.stdout
+    }
 
     private func baseShellEnv() -> [String: String] {
         var env = ProcessInfo.processInfo.environment

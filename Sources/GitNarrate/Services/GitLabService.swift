@@ -8,6 +8,11 @@ final class GitLabService {
 
     static let mrPageSize = 30
 
+    private var glabBinary: String {
+        let custom = UserDefaults.standard.string(forKey: "glabPath") ?? ""
+        return custom.isEmpty ? "glab" : custom
+    }
+
     // MARK: - Detection
 
     func isGitLabRepo(url: String) -> Bool {
@@ -42,6 +47,10 @@ final class GitLabService {
     // MARK: - Availability
 
     func isAvailable() async -> Bool {
+        let binary = glabBinary
+        if binary != "glab" {
+            return FileManager.default.isExecutableFile(atPath: binary)
+        }
         do {
             let output = try await shell.execute(
                 "which", arguments: ["glab"],
@@ -50,8 +59,8 @@ final class GitLabService {
             guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return false
             }
-            let result = try await shell.run(
-                "glab", arguments: ["auth", "status"],
+            let result = try await runGlab(
+                arguments: ["auth", "status"],
                 environment: baseShellEnv(),
                 timeout: 10
             )
@@ -65,8 +74,8 @@ final class GitLabService {
 
     func listHosts() async -> [String] {
         // glab auth status writes to stderr
-        guard let result = try? await shell.run(
-            "glab", arguments: ["auth", "status"],
+        guard let result = try? await runGlab(
+            arguments: ["auth", "status"],
             environment: baseShellEnv(), timeout: 10
         ) else { return [] }
 
@@ -80,8 +89,8 @@ final class GitLabService {
             args += ["-h", host]
         }
 
-        guard let result = try? await shell.run(
-            "glab", arguments: args,
+        guard let result = try? await runGlab(
+            arguments: args,
             environment: baseShellEnv(), timeout: 10
         ) else { return nil }
 
@@ -175,8 +184,8 @@ final class GitLabService {
         }
 
         let env = await shellEnv(host: host)
-        let result = try await shell.run(
-            "glab", arguments: args,
+        let result = try await runGlab(
+            arguments: args,
             environment: env, timeout: 30
         )
 
@@ -204,8 +213,7 @@ final class GitLabService {
         }
 
         let env = await shellEnv(host: host)
-        let result = try await shell.run(
-            "glab",
+        let result = try await runGlab(
             arguments: ["mr", "diff", "\(mrNumber)", "-R", slug, "--color=never"],
             environment: env,
             timeout: 30
@@ -229,8 +237,7 @@ final class GitLabService {
         }
 
         let env = await shellEnv(host: host)
-        let result = try await shell.run(
-            "glab",
+        let result = try await runGlab(
             arguments: ["mr", "view", "\(mrNumber)", "-R", slug, "--output", "json"],
             environment: env,
             timeout: 15
@@ -254,12 +261,30 @@ final class GitLabService {
 
     // MARK: - Private
 
+    private func runGlab(
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval = 30
+    ) async throws -> ShellService.ShellResult {
+        let binary = glabBinary
+        if binary.contains("/") {
+            return try await shell.runDirect(
+                binary, arguments: arguments,
+                environment: environment, timeout: timeout
+            )
+        }
+        return try await shell.run(
+            binary, arguments: arguments,
+            environment: environment, timeout: timeout
+        )
+    }
+
     private func shellEnv(host: String? = nil) async -> [String: String] {
         var env = baseShellEnv()
         if let host {
             // Get token for specific host
-            if let result = try? await shell.run(
-                "glab", arguments: ["auth", "token", "-h", host],
+            if let result = try? await runGlab(
+                arguments: ["auth", "token", "-h", host],
                 environment: env, timeout: 5
             ), result.exitCode == 0 {
                 let token = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)

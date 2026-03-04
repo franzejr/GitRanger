@@ -9,6 +9,8 @@ struct SettingsView: View {
     @AppStorage("ollamaModel") private var ollamaModel = "llama3.2"
     @AppStorage("ollamaURL") private var ollamaURL = "http://localhost:11434"
     @AppStorage("claudePath") private var claudePath = ""
+    @AppStorage("ghPath") private var ghPath = ""
+    @AppStorage("glabPath") private var glabPath = ""
     @AppStorage("pollInterval") private var pollInterval = 300
     @AppStorage("prReviewPrompt") private var prReviewPrompt = ""
 
@@ -98,22 +100,9 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
 
                 HStack {
-                    TextField(
-                        "Auto-detect",
-                        text: $claudePath
-                    )
-                    .font(.system(.body, design: .monospaced))
-
-                    Button("Browse...") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = true
-                        panel.canChooseDirectories = false
-                        panel.allowsMultipleSelection = false
-                        panel.message = "Select the claude binary"
-                        if panel.runModal() == .OK, let url = panel.url {
-                            claudePath = url.path
-                        }
-                    }
+                    TextField("Auto-detect", text: $claudePath)
+                        .font(.system(.body, design: .monospaced))
+                    browseButton(for: $claudePath, message: "Select the claude binary")
                 }
 
                 if !claudePath.isEmpty {
@@ -182,21 +171,58 @@ struct SettingsView: View {
             }
 
             Section("Requirements") {
-                Text("PR Review requires the GitHub CLI (gh) to be installed and authenticated.")
+                Text("PR Review requires the GitHub CLI (gh) or GitLab CLI (glab) to be installed.")
                     .foregroundStyle(.secondary)
                     .font(.caption)
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("brew install gh")
-                            .font(.system(.body, design: .monospaced))
-                        Text("gh auth login")
-                            .font(.system(.body, design: .monospaced))
+                        Text("brew install gh && gh auth login")
+                            .font(.system(.caption, design: .monospaced))
+                        Text("brew install glab && glab auth login")
+                            .font(.system(.caption, design: .monospaced))
                     }
+                }
+            }
+
+            Section("CLI Paths") {
+                Text("Leave empty for auto-detect via PATH.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Text("gh")
+                        .frame(width: 40, alignment: .trailing)
+                    TextField("Auto-detect", text: $ghPath)
+                        .font(.system(.body, design: .monospaced))
+                    browseButton(for: $ghPath, message: "Select the gh binary")
+                }
+
+                HStack {
+                    Text("glab")
+                        .frame(width: 40, alignment: .trailing)
+                    TextField("Auto-detect", text: $glabPath)
+                        .font(.system(.body, design: .monospaced))
+                    browseButton(for: $glabPath, message: "Select the glab binary")
                 }
             }
         }
         .padding()
+    }
+
+    private func browseButton(
+        for binding: Binding<String>, message: String
+    ) -> some View {
+        Button("Browse...") {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            panel.message = message
+            if panel.runModal() == .OK, let url = panel.url {
+                binding.wrappedValue = url.path
+            }
+        }
     }
 
     // MARK: - General Tab
