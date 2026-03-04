@@ -206,7 +206,7 @@ final class GitLabService {
         let env = await shellEnv(host: host)
         let result = try await shell.run(
             "glab",
-            arguments: ["mr", "diff", "\(mrNumber)", "-R", slug],
+            arguments: ["mr", "diff", "\(mrNumber)", "-R", slug, "--color=never"],
             environment: env,
             timeout: 30
         )
@@ -323,7 +323,7 @@ private struct MRListDTO: Codable {
         default: mappedState = state.uppercased()
         }
 
-        let isDraft = draft ?? title.hasPrefix("Draft:") || title.hasPrefix("WIP:")
+        let isDraft = draft ?? (title.hasPrefix("Draft:") || title.hasPrefix("WIP:"))
 
         return PullRequest(
             number: iid,
