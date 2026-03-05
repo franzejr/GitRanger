@@ -75,6 +75,7 @@ struct PRReviewView: View {
     @State var selectedTab: ReviewTab = .review
     @State var expandedAgents: Set<ReviewAgent> = []
     @State var expandedCustomAgents: Set<String> = []
+    @State var showActionSheet = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -104,28 +105,73 @@ struct PRReviewView: View {
     // MARK: - Header
 
     private var prHeader: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let pr = viewModel.selectedPR {
-                    prTitleRow(pr)
-                    prMetadataRow(pr)
+        VStack(spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let pr = viewModel.selectedPR {
+                        prTitleRow(pr)
+                        prMetadataRow(pr)
+                    }
                 }
+
+                Spacer()
+
+                if viewModel.selectedPR?.state == "OPEN" {
+                    Button {
+                        showActionSheet = true
+                    } label: {
+                        Label("Review", systemImage: "checkmark.message")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Approve or comment on this PR")
+                }
+
+                Button {
+                    viewModel.dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Close")
             }
 
-            Spacer()
-
-            Button {
-                viewModel.dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.tertiary)
+            if let success = viewModel.actionSuccess {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(success)
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                .transition(.opacity)
             }
-            .buttonStyle(.plain)
-            .help("Close")
+
+            if let error = viewModel.actionError {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(3)
+                }
+                .transition(.opacity)
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .sheet(isPresented: $showActionSheet) {
+            if let repo {
+                PRActionSheet(
+                    viewModel: viewModel,
+                    repo: repo,
+                    isPresented: $showActionSheet
+                )
+            }
+        }
     }
 
     private func prTitleRow(_ pr: PullRequest) -> some View {

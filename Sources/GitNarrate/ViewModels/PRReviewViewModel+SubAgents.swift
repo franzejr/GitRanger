@@ -136,6 +136,42 @@ extension PRReviewViewModel {
         customAgentLoading.remove(agentId)
     }
 
+    // MARK: - Deep Verify (second pass per agent)
+
+    func deepVerifyAgent(
+        _ agent: ReviewAgent, repo: Repo
+    ) async {
+        guard let pr = selectedPR, let diff,
+              let firstReview = agentReviews[agent] else { return }
+
+        agentDeepLoading.insert(agent)
+        agentDeepErrors.removeValue(forKey: agent)
+        agentDeepVerdicts.removeValue(forKey: agent)
+
+        do {
+            let input = try await buildPRInput(
+                pr: pr, repo: repo, diff: diff
+            )
+            let prompt = PromptBuilder.buildDeepVerifyPrompt(
+                agent: agent,
+                firstReview: firstReview,
+                input: input
+            )
+            let provider = AIServiceFactory.activeProvider()
+            let result = try await provider.generate(
+                prompt: prompt,
+                repoPath: URL(fileURLWithPath: repo.localPath)
+            )
+
+            agentDeepReviews[agent] = result
+            agentDeepVerdicts[agent] = Self.parseVerdict(result)
+        } catch {
+            agentDeepErrors[agent] = error.localizedDescription
+        }
+
+        agentDeepLoading.remove(agent)
+    }
+
     // MARK: - Private Helpers
 
     private func resetSubAgentState(

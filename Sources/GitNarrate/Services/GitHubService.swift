@@ -229,6 +229,44 @@ final class GitHubService {
         return PRDetail(title: dto.title, body: dto.body ?? "")
     }
 
+    // MARK: - PR Actions
+
+    func approvePR(repoUrl: String, prNumber: Int, account: String? = nil) async throws {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        _ = try await runGhOrThrow(
+            arguments: ["pr", "review", "\(prNumber)", "-R", slug, "--approve"],
+            environment: env, timeout: 30
+        )
+    }
+
+    func commentOnPR(repoUrl: String, prNumber: Int, message: String, account: String? = nil) async throws {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        _ = try await runGhOrThrow(
+            arguments: ["pr", "review", "\(prNumber)", "-R", slug, "--comment", "-b", message],
+            environment: env, timeout: 30
+        )
+    }
+
+    func requestChanges(repoUrl: String, prNumber: Int, message: String, account: String? = nil) async throws {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        _ = try await runGhOrThrow(
+            arguments: ["pr", "review", "\(prNumber)", "-R", slug, "--request-changes", "-b", message],
+            environment: env, timeout: 30
+        )
+    }
+
     // MARK: - Private
 
     private func runGh(

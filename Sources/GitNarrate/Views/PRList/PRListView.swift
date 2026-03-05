@@ -70,20 +70,33 @@ struct PRListView: View {
         }
     }
 
+    private var currentUser: String? {
+        viewModel.currentGhUser ?? viewModel.currentGlUser
+    }
+
     private var prList: some View {
         List(selection: $selectedPRNumber) {
-            ForEach(viewModel.pullRequests) { pr in
-                PRItemView(
-                    pr: pr,
-                    isSelected: selectedPRNumber == pr.number,
-                    currentUser: viewModel.currentGhUser
-                )
-                .tag(pr.number)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedPRNumber = pr.number
-                    onSelectPR(pr)
+            if viewModel.filterMode == .pendingMyReview, let user = currentUser {
+                let waiting = viewModel.pullRequests.filter {
+                    $0.isAwaitingReview(by: user)
+                        || $0.wasReviewedBy(user) == nil
                 }
+                let approved = viewModel.pullRequests.filter {
+                    $0.wasReviewedBy(user)?.state == "APPROVED"
+                }
+
+                if !waiting.isEmpty {
+                    Section("Waiting for your review") {
+                        prRows(waiting)
+                    }
+                }
+                if !approved.isEmpty {
+                    Section("Approved by you (still open)") {
+                        prRows(approved)
+                    }
+                }
+            } else {
+                prRows(viewModel.pullRequests)
             }
 
             if viewModel.hasMore {
@@ -96,6 +109,22 @@ struct PRListView: View {
                   let pr = viewModel.pullRequests.first(where: { $0.number == newNumber })
             else { return }
             onSelectPR(pr)
+        }
+    }
+
+    private func prRows(_ prs: [PullRequest]) -> some View {
+        ForEach(prs) { pr in
+            PRItemView(
+                pr: pr,
+                isSelected: selectedPRNumber == pr.number,
+                currentUser: currentUser
+            )
+            .tag(pr.number)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedPRNumber = pr.number
+                onSelectPR(pr)
+            }
         }
     }
 

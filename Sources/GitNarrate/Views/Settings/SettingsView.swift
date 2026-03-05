@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("claudePath") private var claudePath = ""
     @AppStorage("ghPath") private var ghPath = ""
     @AppStorage("glabPath") private var glabPath = ""
+    @AppStorage("gitlabHost") private var gitlabHost = ""
     @AppStorage("pollInterval") private var pollInterval = 300
     @AppStorage("prReviewPrompt") private var prReviewPrompt = ""
 
@@ -204,6 +205,25 @@ struct SettingsView: View {
                     TextField("Auto-detect", text: $glabPath)
                         .font(.system(.body, design: .monospaced))
                     browseButton(for: $glabPath, message: "Select the glab binary")
+                }
+            }
+
+            Section("GitLab") {
+                Text("For self-hosted GitLab instances, set the hostname below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Text("Host")
+                        .frame(width: 40, alignment: .trailing)
+                    TextField("gitlab.com", text: $gitlabHost)
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                if !gitlabHost.isEmpty {
+                    Text("Using: \(gitlabHost)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

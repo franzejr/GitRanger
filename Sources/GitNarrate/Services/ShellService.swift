@@ -115,30 +115,36 @@ final class ShellService {
                 directExec: directExec
             )
 
-            let accumulator = stderrHandler.map { handler -> LockedData in
-                let acc = LockedData()
-                stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-                    let data = handle.availableData
-                    guard !data.isEmpty else { return }
-                    acc.append(data)
-                    if let text = String(data: data, encoding: .utf8) {
-                        handler(text)
-                    }
+            // Drain stdout asynchronously to avoid pipe buffer deadlock.
+            // If the process writes more than ~64KB to stdout, the pipe buffer
+            // fills up and blocks the process from terminating.
+            let stdoutAccumulator = LockedData()
+            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                stdoutAccumulator.append(data)
+            }
+
+            let stderrAccumulator = LockedData()
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                stderrAccumulator.append(data)
+                if let handler = stderrHandler,
+                   let text = String(data: data, encoding: .utf8) {
+                    handler(text)
                 }
-                return acc
             }
 
             let timeoutItem = scheduleTimeout(for: process, after: timeout)
 
             process.terminationHandler = { _ in
                 timeoutItem.cancel()
-                if stderrHandler != nil {
-                    stderrPipe.fileHandleForReading.readabilityHandler = nil
-                }
-                let result = Self.collectOutput(
-                    stdoutPipe: stdoutPipe,
-                    stderrPipe: stderrPipe,
-                    stderrAccumulator: accumulator,
+                stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
+                let result = ShellResult(
+                    stdout: String(data: stdoutAccumulator.data, encoding: .utf8) ?? "",
+                    stderr: String(data: stderrAccumulator.data, encoding: .utf8) ?? "",
                     exitCode: process.terminationStatus
                 )
                 continuation.resume(returning: result)
@@ -148,9 +154,8 @@ final class ShellService {
                 try process.run()
             } catch {
                 timeoutItem.cancel()
-                if stderrHandler != nil {
-                    stderrPipe.fileHandleForReading.readabilityHandler = nil
-                }
+                stdoutPipe.fileHandleForReading.readabilityHandler = nil
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(throwing: error)
             }
         }
@@ -199,22 +204,6 @@ final class ShellService {
         return timeoutItem
     }
 
-    private static func collectOutput(
-        stdoutPipe: Pipe,
-        stderrPipe: Pipe,
-        stderrAccumulator: LockedData?,
-        exitCode: Int32
-    ) -> ShellResult {
-        let stdoutData = stdoutPipe.fileHandleForReading
-            .readDataToEndOfFile()
-        let stderrData = stderrAccumulator?.data
-            ?? stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        return ShellResult(
-            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-            stderr: String(data: stderrData, encoding: .utf8) ?? "",
-            exitCode: exitCode
-        )
-    }
 }
 
 /// Thread-safe Data accumulator for use across concurrent closures.

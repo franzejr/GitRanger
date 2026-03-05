@@ -206,6 +206,55 @@ enum PromptBuilder {
         """
     }
 
+    // MARK: - Deep Verify (per-agent second pass)
+
+    static func buildDeepVerifyPrompt(
+        agent: ReviewAgent,
+        firstReview: String,
+        input: PRReviewInput
+    ) -> String {
+        let truncatedDiff = String(input.diff.prefix(30000))
+
+        return """
+        You are a meticulous senior engineer performing a SECOND PASS verification of a \
+        \(agent.displayName.lowercased()) review.
+
+        A reviewer already analyzed this PR for \(agent.shortDescription.lowercased()). \
+        Your job is to verify EVERY claim they made by re-reading the actual diff line by line.
+
+        For each point in the original review:
+        1. Quote the specific code they referenced
+        2. Confirm if the finding is CORRECT, INCORRECT, or OVERSTATED
+        3. If incorrect, explain what the code actually does
+
+        Then check for anything the first review MISSED:
+        - Re-read every file in the diff carefully
+        - Look for issues the first reviewer overlooked
+        - Check edge cases they didn't consider
+
+        Be thorough and precise. Reference exact line numbers and code from the diff. \
+        This is the final check before the review gets posted.
+
+        IMPORTANT: Begin your response with exactly "VERDICT: PASS" if the original review \
+        is accurate and complete, or "VERDICT: FAIL" if corrections or additions are needed. \
+        Put this on the very first line, then continue with your verification below.
+
+        --- Original \(agent.displayName) Review ---
+        \(firstReview)
+
+        --- Pull Request ---
+        Title: \(input.prTitle)
+        Author: \(input.prAuthor)
+        Branch: \(input.headBranch) -> \(input.baseBranch)
+
+        Description:
+        \(input.prBody.isEmpty ? "(no description)" : input.prBody)
+
+        --- Diff ---
+        \(truncatedDiff)
+        """
+    }
+
     // MARK: - Second Review
 
     static var defaultSecondReviewPrompt: String {

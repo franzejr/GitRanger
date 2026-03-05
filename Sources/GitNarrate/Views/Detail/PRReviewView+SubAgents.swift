@@ -54,6 +54,27 @@ extension PRReviewView {
 
             Spacer()
 
+            if viewModel.completedAgentCount > 0 && !viewModel.isAnyAgentLoading {
+                Button {
+                    guard let repo else { return }
+                    Task {
+                        await viewModel.postReviewAsComment(repo: repo)
+                    }
+                } label: {
+                    if viewModel.isSubmittingAction {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Label("Post as Comment", systemImage: "paperplane")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(viewModel.isSubmittingAction)
+                .help("Post the AI review summary as a comment on this PR")
+            }
+
             Button {
                 guard let repo else { return }
                 Task {
@@ -139,6 +160,7 @@ extension PRReviewView {
                 verdictBanner(for: agent)
                 markdownView(PRReviewViewModel.stripVerdictLine(text))
                 agentActionButtons(agent)
+                deepVerifySection(agent)
             }
         }
     }
@@ -162,6 +184,74 @@ extension PRReviewView {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+
+            if viewModel.agentReviews[agent] != nil {
+                Button {
+                    guard let repo else { return }
+                    Task {
+                        await viewModel.deepVerifyAgent(agent, repo: repo)
+                    }
+                } label: {
+                    Label("Verify", systemImage: "checkmark.shield")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Re-run a thorough second pass to verify every finding")
+                .disabled(viewModel.agentDeepLoading.contains(agent))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func deepVerifySection(_ agent: ReviewAgent) -> some View {
+        if viewModel.agentDeepLoading.contains(agent) {
+            Divider().padding(.vertical, 4)
+            HStack(spacing: 10) {
+                ProgressView().scaleEffect(0.7)
+                Text("Verifying review...")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+        } else if let error = viewModel.agentDeepErrors[agent] {
+            Divider().padding(.vertical, 4)
+            inlineError(error) {
+                guard let repo else { return }
+                Task {
+                    await viewModel.deepVerifyAgent(agent, repo: repo)
+                }
+            }
+        } else if let text = viewModel.agentDeepReviews[agent] {
+            Divider().padding(.vertical, 4)
+            deepVerifyBanner(agent)
+            markdownView(PRReviewViewModel.stripVerdictLine(text))
+        }
+    }
+
+    @ViewBuilder
+    private func deepVerifyBanner(_ agent: ReviewAgent) -> some View {
+        if let passed = viewModel.agentDeepVerdicts[agent] {
+            HStack(spacing: 6) {
+                Image(
+                    systemName: passed
+                        ? "checkmark.shield.fill"
+                        : "exclamationmark.shield.fill"
+                )
+                .font(.subheadline)
+                Text(passed
+                    ? "Verification: Review is accurate"
+                    : "Verification: Corrections needed"
+                )
+                .font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(passed ? .green : .orange)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                (passed ? Color.green : Color.orange).opacity(0.1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
 

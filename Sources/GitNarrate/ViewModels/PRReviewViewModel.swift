@@ -28,6 +28,12 @@ final class PRReviewViewModel {
     var customAgentCached: Set<String> = []
     var customAgentVerdicts: [String: Bool] = [:]
 
+    // Deep verify (second pass per agent)
+    var agentDeepReviews: [ReviewAgent: String] = [:]
+    var agentDeepErrors: [ReviewAgent: String] = [:]
+    var agentDeepLoading: Set<ReviewAgent> = []
+    var agentDeepVerdicts: [ReviewAgent: Bool] = [:]
+
     var launchedAgentCount: Int = 0
 
     var isAnyAgentLoading: Bool {
@@ -44,6 +50,11 @@ final class PRReviewViewModel {
         !agentReviews.isEmpty || isAnyAgentLoading
             || !customAgentReviews.isEmpty
     }
+
+    // PR actions (approve/comment)
+    var isSubmittingAction = false
+    var actionError: String?
+    var actionSuccess: String?
 
     let githubService = GitHubService.shared
     let gitlabService = GitLabService.shared
@@ -106,6 +117,115 @@ final class PRReviewViewModel {
         }
 
         isLoading = false
+    }
+
+    // MARK: - PR Actions
+
+    func approvePR(repo: Repo, comment: String = "") async {
+        guard let pr = selectedPR else { return }
+        isSubmittingAction = true
+        actionError = nil
+        actionSuccess = nil
+
+        do {
+            if gitlabService.isGitLabRepo(url: repo.url) {
+                try await gitlabService.approveMR(
+                    repoUrl: repo.url, mrNumber: pr.number, host: repo.glHost
+                )
+                if !comment.isEmpty {
+                    try await gitlabService.commentOnMR(
+                        repoUrl: repo.url, mrNumber: pr.number,
+                        message: comment, host: repo.glHost
+                    )
+                }
+            } else {
+                if comment.isEmpty {
+                    try await githubService.approvePR(
+                        repoUrl: repo.url, prNumber: pr.number, account: repo.ghAccount
+                    )
+                } else {
+                    // gh pr review --approve doesn't take a body, so approve then comment
+                    try await githubService.approvePR(
+                        repoUrl: repo.url, prNumber: pr.number, account: repo.ghAccount
+                    )
+                    try await githubService.commentOnPR(
+                        repoUrl: repo.url, prNumber: pr.number,
+                        message: comment, account: repo.ghAccount
+                    )
+                }
+            }
+            actionSuccess = "Approved #\(pr.number)"
+        } catch {
+            actionError = error.localizedDescription
+        }
+
+        isSubmittingAction = false
+    }
+
+    func commentOnPR(repo: Repo, message: String) async {
+        guard let pr = selectedPR else { return }
+        isSubmittingAction = true
+        actionError = nil
+        actionSuccess = nil
+
+        do {
+            if gitlabService.isGitLabRepo(url: repo.url) {
+                try await gitlabService.commentOnMR(
+                    repoUrl: repo.url, mrNumber: pr.number,
+                    message: message, host: repo.glHost
+                )
+            } else {
+                try await githubService.commentOnPR(
+                    repoUrl: repo.url, prNumber: pr.number,
+                    message: message, account: repo.ghAccount
+                )
+            }
+            actionSuccess = "Comment added to #\(pr.number)"
+        } catch {
+            actionError = error.localizedDescription
+        }
+
+        isSubmittingAction = false
+    }
+
+    /// Build a formatted summary from all completed agent reviews.
+    func buildReviewSummary() -> String {
+        var parts: [String] = []
+        parts.append("## AI Code Review Summary")
+        parts.append("")
+
+        for agent in ReviewAgent.allCases {
+            guard let text = agentReviews[agent] else { continue }
+            let verdict = agentVerdicts[agent]
+            let icon = verdict == true ? "✅" : (verdict == false ? "⚠️" : "📝")
+            parts.append("### \(icon) \(agent.displayName)")
+            parts.append(Self.stripVerdictLine(text))
+            parts.append("")
+
+            if let deepText = agentDeepReviews[agent] {
+                let deepVerdict = agentDeepVerdicts[agent]
+                let deepIcon = deepVerdict == true ? "✅" : "⚠️"
+                parts.append("#### \(deepIcon) Verification")
+                parts.append(Self.stripVerdictLine(deepText))
+                parts.append("")
+            }
+        }
+
+        for agent in customAgentReviews {
+            let text = agent.value
+            let verdict = customAgentVerdicts[agent.key]
+            let icon = verdict == true ? "✅" : (verdict == false ? "⚠️" : "📝")
+            parts.append("### \(icon) \(agent.key)")
+            parts.append(Self.stripVerdictLine(text))
+            parts.append("")
+        }
+
+        return parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func postReviewAsComment(repo: Repo) async {
+        let summary = buildReviewSummary()
+        await commentOnPR(repo: repo, message: summary)
     }
 
     // MARK: - Legacy Single Review
@@ -202,6 +322,9 @@ final class PRReviewViewModel {
         diff = nil
         selectedPR = nil
         isCached = false
+        actionError = nil
+        actionSuccess = nil
+        isSubmittingAction = false
         agentReviews = [:]
         agentErrors = [:]
         agentLoading = []
@@ -212,6 +335,10 @@ final class PRReviewViewModel {
         customAgentLoading = []
         customAgentCached = []
         customAgentVerdicts = [:]
+        agentDeepReviews = [:]
+        agentDeepErrors = [:]
+        agentDeepLoading = []
+        agentDeepVerdicts = [:]
         launchedAgentCount = 0
     }
 
