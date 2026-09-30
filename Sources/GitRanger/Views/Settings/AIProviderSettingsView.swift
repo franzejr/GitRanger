@@ -4,6 +4,7 @@ struct AIProviderSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("aiProvider") private var aiProvider = AIProvider.claudeCode.rawValue
     @AppStorage("claudeModel") private var claudeModel = "haiku"
+    @AppStorage("claudeCustomModel") private var claudeCustomModel = ""
     @AppStorage("claudeRepoContext") private var claudeRepoContext = true
     @AppStorage("codexModel") private var codexModel = ""
     @AppStorage("codexRepoContext") private var codexRepoContext = true
@@ -100,13 +101,22 @@ struct AIProviderSettingsView: View {
     private var claudeConfiguration: some View {
         VStack(alignment: .leading, spacing: 10) {
             SettingsRow("Model") {
-                Picker("Model", selection: $claudeModel) {
-                    Text("Claude Haiku").tag("haiku")
-                    Text("Claude Sonnet").tag("sonnet")
-                    Text("Claude Opus").tag("opus")
+                HStack(spacing: 10) {
+                    Picker("Model", selection: $claudeModel) {
+                        Text("Claude Haiku").tag("haiku")
+                        Text("Claude Sonnet").tag("sonnet")
+                        Text("Claude Opus").tag("opus")
+                        Text("Custom model ID").tag("custom")
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 180)
+
+                    if claudeModel == "custom" {
+                        TextField("Claude model ID", text: $claudeCustomModel)
+                            .font(.system(size: 11, design: .monospaced))
+                            .accessibilityIdentifier("claude-custom-model-field")
+                    }
                 }
-                .labelsHidden()
-                .frame(maxWidth: 180)
             }
             SettingsRow("Repo context") {
                 HStack(spacing: 8) {

@@ -159,6 +159,20 @@ final class AIModelsTests: XCTestCase {
         )
     }
 
+    func testClaudeCustomModelIsUsedWhenSelected() {
+        XCTAssertEqual(
+            ClaudeCodeService.resolvedModel(
+                selected: "custom",
+                custom: "claude-special-model"
+            ),
+            "claude-special-model"
+        )
+        XCTAssertEqual(
+            ClaudeCodeService.resolvedModel(selected: "sonnet", custom: "ignored"),
+            "sonnet"
+        )
+    }
+
     func testCodexAuthenticationErrorExplainsHowToLogin() {
         let result = ShellService.ShellResult(
             stdout: "",
@@ -367,5 +381,43 @@ final class AIServiceFactoryTests: XCTestCase {
         let service = AIServiceFactory.create(provider: .ollama, settings: settings)
         XCTAssertEqual(service.displayName, "Ollama (Local)")
         XCTAssertFalse(service.requiresAPIKey)
+    }
+}
+
+// MARK: - AI Work Coordinator Tests
+
+final class AIWorkCoordinatorTests: XCTestCase {
+    private actor ConcurrencyProbe {
+        private var active = 0
+        private(set) var peak = 0
+
+        func enter() {
+            active += 1
+            peak = max(peak, active)
+        }
+
+        func leave() {
+            active -= 1
+        }
+    }
+
+    func testCoordinatorCapsConcurrentAIWork() async {
+        let coordinator = AIWorkCoordinator(maxConcurrentJobs: 2)
+        let probe = ConcurrencyProbe()
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    await coordinator.acquire()
+                    await probe.enter()
+                    try? await Task.sleep(for: .milliseconds(20))
+                    await probe.leave()
+                    await coordinator.release()
+                }
+            }
+        }
+
+        let peak = await probe.peak
+        XCTAssertEqual(peak, 2)
     }
 }

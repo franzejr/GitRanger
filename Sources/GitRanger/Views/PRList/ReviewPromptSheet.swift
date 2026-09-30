@@ -1,8 +1,15 @@
 import SwiftUI
 
 struct ReviewPromptSheet: View {
+    enum Presentation {
+        case sheet
+        case settings
+    }
+
+    @Environment(\.modelContext) private var modelContext
     let repo: Repo
     @Binding var isPresented: Bool
+    var presentation: Presentation = .sheet
     @State private var promptText: String = ""
     @State private var selectedAccount: String = ""
     @State private var ghAccounts: [String] = []
@@ -13,14 +20,14 @@ struct ReviewPromptSheet: View {
     @State var showAddAgent = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sheetHeader
-            Divider()
-            sheetContent
-            Divider()
-            sheetFooter
+        Group {
+            if presentation == .sheet {
+                content
+                    .frame(width: 780, height: 860)
+            } else {
+                content
+            }
         }
-        .frame(width: 780, height: 860)
         .onAppear {
             promptText = repo.reviewPrompt ?? ""
             selectedAccount = repo.ghAccount ?? ""
@@ -29,6 +36,18 @@ struct ReviewPromptSheet: View {
             Task {
                 ghAccounts = await GitHubService.shared.listAccounts()
             }
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if presentation == .sheet {
+                sheetHeader
+                Divider()
+            }
+            sheetContent
+            Divider()
+            sheetFooter
         }
     }
 
@@ -61,14 +80,21 @@ struct ReviewPromptSheet: View {
 
     private var sheetFooter: some View {
         HStack {
+            if presentation == .settings {
+                Text("Changes apply to \(repo.name)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Spacer()
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
             Spacer()
 
-            Button("Cancel") {
-                isPresented = false
-            }
-            .keyboardShortcut(.cancelAction)
-
-            Button("Save") {
+            Button(presentation == .settings ? "Save Changes" : "Save") {
                 save()
             }
             .buttonStyle(.borderedProminent)
@@ -283,7 +309,10 @@ struct ReviewPromptSheet: View {
         repo.customAgents = customAgents
 
         repo.updatedAt = Date()
-        isPresented = false
+        try? modelContext.save()
+        if presentation == .sheet {
+            isPresented = false
+        }
     }
 }
 

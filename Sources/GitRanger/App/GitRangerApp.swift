@@ -108,6 +108,7 @@ struct GitRangerApp: App {
         Settings {
             SettingsView()
                 .tint(GRTheme.accent)
+                .modelContainer(sharedModelContainer)
         }
 
         MenuBarExtra {

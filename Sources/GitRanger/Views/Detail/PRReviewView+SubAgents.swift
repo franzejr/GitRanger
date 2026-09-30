@@ -168,7 +168,10 @@ extension PRReviewView {
         .buttonStyle(.plain)
         .font(.system(size: 9, weight: .medium))
         .foregroundStyle(GRTheme.link(colorScheme))
-        .disabled(viewModel.agentLoading.contains(agent))
+        .disabled(
+            viewModel.agentLoading.contains(agent)
+                || viewModel.agentQueued.contains(agent)
+        )
         .help("\(hasReview ? "Re-run" : "Run") \(agent.displayName)")
     }
 
@@ -176,6 +179,10 @@ extension PRReviewView {
     private func agentStatusDot(_ agent: ReviewAgent) -> some View {
         if viewModel.agentLoading.contains(agent) {
             ProgressView().controlSize(.mini)
+        } else if viewModel.agentQueued.contains(agent) {
+            Image(systemName: "clock")
+                .font(.system(size: 9))
+                .foregroundStyle(GRTheme.muted(colorScheme))
         } else if viewModel.agentErrors[agent] != nil {
             Circle().fill(GRTheme.danger).frame(width: 8, height: 8)
         } else if let passed = viewModel.agentVerdicts[agent] {
@@ -190,6 +197,7 @@ extension PRReviewView {
     private func agentVerdictLabel(_ agent: ReviewAgent, disabled: Bool) -> String {
         if disabled { return "DISABLED" }
         if viewModel.agentLoading.contains(agent) { return "ANALYZING" }
+        if viewModel.agentQueued.contains(agent) { return "QUEUED" }
         if viewModel.agentErrors[agent] != nil { return "FAILED" }
         if let passed = viewModel.agentVerdicts[agent] {
             return passed ? "PASSED" : "ISSUES FOUND"
@@ -211,6 +219,8 @@ extension PRReviewView {
         VStack(alignment: .leading, spacing: 10) {
             if viewModel.agentLoading.contains(agent) {
                 agentLoadingRow()
+            } else if viewModel.agentQueued.contains(agent) {
+                agentQueuedRow()
             } else if let error = viewModel.agentErrors[agent] {
                 inlineError(error) {
                     guard let repo else { return }
@@ -277,6 +287,10 @@ extension PRReviewView {
     func customAgentStatusBadge(_ agentId: String) -> some View {
         if viewModel.customAgentLoading.contains(agentId) {
             ProgressView().controlSize(.mini)
+        } else if viewModel.customAgentQueued.contains(agentId) {
+            Image(systemName: "clock")
+                .font(.system(size: 9))
+                .foregroundStyle(GRTheme.muted(colorScheme))
         } else if viewModel.customAgentErrors[agentId] != nil {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(GRTheme.danger)
@@ -304,6 +318,16 @@ extension PRReviewView {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text("Analyzing...")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    func agentQueuedRow() -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock")
+                .foregroundStyle(.secondary)
+            Text("Queued — waiting for an AI slot")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }

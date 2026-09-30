@@ -118,7 +118,10 @@ final class ClaudeCodeService: AIServiceProtocol {
     private func buildArguments(
         useTools: Bool, repoPath: URL?
     ) -> [String] {
-        let model = UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku"
+        let model = Self.resolvedModel(
+            selected: UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku",
+            custom: UserDefaults.standard.string(forKey: "claudeCustomModel") ?? ""
+        )
         var args = [
             "-p", "-",
             "--output-format", "json",
@@ -132,6 +135,10 @@ final class ClaudeCodeService: AIServiceProtocol {
             args += ["--add-dir", repoPath.path]
         }
         return args
+    }
+
+    static func resolvedModel(selected: String, custom: String) -> String {
+        selected == "custom" && !custom.isEmpty ? custom : selected
     }
 
     private func executeClaudeBinary(

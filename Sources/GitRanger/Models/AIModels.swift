@@ -45,7 +45,7 @@ enum AIProvider: String, CaseIterable, Codable {
 
 // MARK: - Review Agents
 
-enum ReviewAgent: String, CaseIterable, Identifiable {
+enum ReviewAgent: String, CaseIterable, Identifiable, Sendable {
     case summary = "summary"
     case security = "security"
     case performance = "performance"
@@ -97,7 +97,7 @@ enum ReviewAgent: String, CaseIterable, Identifiable {
 
 // MARK: - Custom Review Agent
 
-struct CustomReviewAgent: Codable, Identifiable, Hashable {
+struct CustomReviewAgent: Codable, Identifiable, Hashable, Sendable {
     var id: String
     var name: String
     var icon: String

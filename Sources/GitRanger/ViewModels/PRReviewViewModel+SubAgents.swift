@@ -47,6 +47,10 @@ extension PRReviewViewModel {
             )
         } catch {
             self.error = error.localizedDescription
+            agentLoading = []
+            agentQueued = []
+            customAgentLoading = []
+            customAgentQueued = []
         }
 
         isLoading = false
@@ -56,6 +60,7 @@ extension PRReviewViewModel {
         _ agent: ReviewAgent, repo: Repo
     ) async {
         guard let pr = selectedPR, let diff else { return }
+        agentQueued.remove(agent)
         agentLoading.insert(agent)
         agentErrors.removeValue(forKey: agent)
         agentCached.remove(agent)
@@ -100,6 +105,7 @@ extension PRReviewViewModel {
     ) async {
         guard let pr = selectedPR, let diff else { return }
         let agentId = customAgent.id
+        customAgentQueued.remove(agentId)
         customAgentLoading.insert(agentId)
         customAgentErrors.removeValue(forKey: agentId)
         customAgentCached.remove(agentId)
@@ -182,12 +188,14 @@ extension PRReviewViewModel {
         error = nil
         agentReviews = [:]
         agentErrors = [:]
-        agentLoading = Set(agents)
+        agentLoading = []
+        agentQueued = Set(agents)
         agentCached = []
         agentVerdicts = [:]
         customAgentReviews = [:]
         customAgentErrors = [:]
-        customAgentLoading = Set(customAgents.map(\.id))
+        customAgentLoading = []
+        customAgentQueued = Set(customAgents.map(\.id))
         customAgentCached = []
         customAgentVerdicts = [:]
         launchedAgentCount = agents.count + customAgents.count
@@ -225,47 +233,73 @@ extension PRReviewViewModel {
         customAgents: [CustomReviewAgent],
         ctx: ReviewContext
     ) async {
+        let jobs = agents.map(ReviewJob.builtIn)
+            + customAgents.map(ReviewJob.custom)
+        let parallelReviewLimit = 2
+
         await withTaskGroup(of: AgentTaskResult.self) { group in
-            for agent in agents {
-                let prompts = ctx.repo.agentPrompts
-                group.addTask {
-                    do {
-                        let prompt = PromptBuilder.buildSubAgentPrompt(
-                            agent: agent,
-                            input: ctx.input,
-                            customInstructions: prompts?[agent.rawValue]
-                        )
-                        let result = try await ctx.provider.generate(
-                            prompt: prompt,
-                            repoPath: ctx.repoPath
-                        )
-                        return .builtIn(agent, .success(result))
-                    } catch {
-                        return .builtIn(agent, .failure(error))
-                    }
-                }
+            var nextJobIndex = 0
+            for _ in 0..<min(parallelReviewLimit, jobs.count) {
+                enqueueReviewJob(jobs[nextJobIndex], in: &group, ctx: ctx)
+                nextJobIndex += 1
             }
 
-            for custom in customAgents {
-                group.addTask {
-                    do {
-                        let prompt = PromptBuilder.buildCustomAgentPrompt(
-                            customAgent: custom,
-                            input: ctx.input
-                        )
-                        let result = try await ctx.provider.generate(
-                            prompt: prompt,
-                            repoPath: ctx.repoPath
-                        )
-                        return .custom(custom.id, .success(result))
-                    } catch {
-                        return .custom(custom.id, .failure(error))
-                    }
-                }
-            }
-
-            for await taskResult in group {
+            while let taskResult = await group.next() {
                 handleAgentResult(taskResult, ctx: ctx)
+                if nextJobIndex < jobs.count {
+                    enqueueReviewJob(
+                        jobs[nextJobIndex], in: &group, ctx: ctx
+                    )
+                    nextJobIndex += 1
+                }
+            }
+        }
+    }
+
+    private func enqueueReviewJob(
+        _ job: ReviewJob,
+        in group: inout TaskGroup<AgentTaskResult>,
+        ctx: ReviewContext
+    ) {
+        switch job {
+        case .builtIn(let agent):
+            agentQueued.remove(agent)
+            agentLoading.insert(agent)
+            let prompts = ctx.repo.agentPrompts
+            group.addTask {
+                do {
+                    let prompt = PromptBuilder.buildSubAgentPrompt(
+                        agent: agent,
+                        input: ctx.input,
+                        customInstructions: prompts?[agent.rawValue]
+                    )
+                    let result = try await ctx.provider.generate(
+                        prompt: prompt,
+                        repoPath: ctx.repoPath
+                    )
+                    return .builtIn(agent, .success(result))
+                } catch {
+                    return .builtIn(agent, .failure(error))
+                }
+            }
+
+        case .custom(let custom):
+            customAgentQueued.remove(custom.id)
+            customAgentLoading.insert(custom.id)
+            group.addTask {
+                do {
+                    let prompt = PromptBuilder.buildCustomAgentPrompt(
+                        customAgent: custom,
+                        input: ctx.input
+                    )
+                    let result = try await ctx.provider.generate(
+                        prompt: prompt,
+                        repoPath: ctx.repoPath
+                    )
+                    return .custom(custom.id, .success(result))
+                } catch {
+                    return .custom(custom.id, .failure(error))
+                }
             }
         }
     }

@@ -1,10 +1,54 @@
 import AppKit
+import SwiftData
 import SwiftUI
 import XCTest
 @testable import GitRanger
 
 @MainActor
 final class DesignRenderingTests: XCTestCase {
+    func testReviewSettingsRemainWiredIntoSettingsWindow() throws {
+        XCTAssertTrue(SettingsView.SettingsTab.allCases.contains(.reviews))
+
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let settingsSource = projectRoot
+            .appendingPathComponent("Sources/GitRanger/Views/Settings/SettingsView.swift")
+        let source = try String(contentsOf: settingsSource, encoding: .utf8)
+
+        XCTAssertTrue(
+            source.contains("case .reviews: ReviewSettingsView()"),
+            "The Reviews tab must keep the full agent configuration view wired in."
+        )
+
+        let reviewSettingsSource = settingsSource
+            .deletingLastPathComponent()
+            .appendingPathComponent("ReviewSettingsView.swift")
+        let reviewSettings = try String(
+            contentsOf: reviewSettingsSource,
+            encoding: .utf8
+        )
+        XCTAssertTrue(reviewSettings.contains("ReviewPromptSheet("))
+
+        let promptSheetSource = settingsSource
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("PRList/ReviewPromptSheet.swift")
+        let promptSheet = try String(contentsOf: promptSheetSource, encoding: .utf8)
+        XCTAssertTrue(promptSheet.contains("builtInAgentsSection"))
+        XCTAssertTrue(promptSheet.contains("customAgentsSection"))
+
+        let appSource = projectRoot
+            .appendingPathComponent("Sources/GitRanger/App/GitRangerApp.swift")
+        let app = try String(contentsOf: appSource, encoding: .utf8)
+        XCTAssertTrue(
+            app.contains("SettingsView()")
+                && app.contains(".modelContainer(sharedModelContainer)"),
+            "Settings must use the same repository database as the main window."
+        )
+    }
+
     func testRenderDesignReferences() throws {
         guard ProcessInfo.processInfo.environment["RENDER_DESIGN"] == "1" else {
             throw XCTSkip("Set RENDER_DESIGN=1 to export visual references")
@@ -12,14 +56,15 @@ final class DesignRenderingTests: XCTestCase {
 
         try render(
             SettingsView().preferredColorScheme(.dark),
-            size: CGSize(width: 900, height: 760),
+            size: CGSize(width: 1_180, height: 900),
             name: "gitranger-settings-dark"
         )
         try render(
             SettingsView().preferredColorScheme(.light),
-            size: CGSize(width: 900, height: 760),
+            size: CGSize(width: 1_180, height: 900),
             name: "gitranger-settings-light"
         )
+        try renderReviewSettings()
 
         let review = makeReviewView()
         try render(
@@ -32,6 +77,31 @@ final class DesignRenderingTests: XCTestCase {
             makeChangesView().preferredColorScheme(.dark),
             size: CGSize(width: 900, height: 600),
             name: "gitranger-changes-dark"
+        )
+    }
+
+    private func renderReviewSettings() throws {
+        let schema = Schema([Repo.self, Commit.self, PRReview.self, SubAgentReview.self])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true
+        )
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [configuration]
+        )
+        container.mainContext.insert(Repo(
+            name: "adaflow",
+            url: "https://github.com/example/adaflow.git",
+            localPath: "/tmp/adaflow"
+        ))
+
+        try render(
+            SettingsView(initialTab: .reviews)
+                .modelContainer(container)
+                .preferredColorScheme(.dark),
+            size: CGSize(width: 1_180, height: 900),
+            name: "gitranger-review-settings-dark"
         )
     }
 

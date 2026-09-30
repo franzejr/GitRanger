@@ -4,6 +4,8 @@
 
 A native macOS app that turns commits, diffs, and pull requests into plain-English narratives. Stop scrolling through cryptic commit messages — GitRanger summarizes changes, reviews PRs with parallel AI agents, and monitors your projects in real time.
 
+**[Website](https://franzejr.github.io/GitRanger/)** · **[Latest release](https://github.com/franzejr/GitRanger/releases/latest)**
+
 ![GitRanger pull request review with parallel AI agents](assets/gitranger-pull-requests.png)
 
 ---
@@ -184,6 +186,7 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 |----------|---------|-------------|
 | **Build & Lint** | Push/PR to main | `swift build`, `swift test`, SwiftLint |
 | **Dependency Check** | Package.swift changes + weekly | Resolves and validates the Swift package graph |
+| **GitHub Pages** | Website changes on main | Publishes the landing page to GitHub Pages |
 | **Release** | Tag `v*` | Builds .app bundle, creates GitHub Release |
 
 ## Documentation

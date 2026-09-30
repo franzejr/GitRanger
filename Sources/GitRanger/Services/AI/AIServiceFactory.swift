@@ -68,6 +68,8 @@ final class AIServiceFactory {
 
     static func activeProvider() -> AIServiceProtocol {
         let settings = settingsFromUserDefaults()
-        return create(provider: settings.aiProvider, settings: settings)
+        return CoordinatedAIService(
+            base: create(provider: settings.aiProvider, settings: settings)
+        )
     }
 }

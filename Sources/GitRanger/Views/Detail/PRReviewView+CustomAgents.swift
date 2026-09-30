@@ -48,6 +48,19 @@ extension PRReviewView {
 
             Spacer()
             customAgentStatusBadge(agentId)
+            Button(viewModel.customAgentReviews[agentId] == nil ? "Run" : "Re-run") {
+                guard let repo else { return }
+                Task {
+                    await viewModel.regenerateSingleCustomAgent(agent, repo: repo)
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(GRTheme.link(colorScheme))
+            .disabled(
+                viewModel.customAgentLoading.contains(agentId)
+                    || viewModel.customAgentQueued.contains(agentId)
+            )
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -68,6 +81,8 @@ extension PRReviewView {
         VStack(alignment: .leading, spacing: 8) {
             if viewModel.customAgentLoading.contains(agentId) {
                 agentLoadingRow()
+            } else if viewModel.customAgentQueued.contains(agentId) {
+                agentQueuedRow()
             } else if let error = viewModel.customAgentErrors[agentId] {
                 inlineError(error) {
                     guard let repo else { return }

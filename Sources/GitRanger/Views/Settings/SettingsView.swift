@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    private enum SettingsTab: String, CaseIterable {
+    enum SettingsTab: String, CaseIterable {
         case general = "General"
         case aiProvider = "AI Provider"
         case reviews = "Reviews"
@@ -17,10 +17,12 @@ struct SettingsView: View {
     @AppStorage("glabPath") private var glabPath = ""
     @AppStorage("gitlabHost") private var gitlabHost = ""
     @AppStorage("pollInterval") private var pollInterval = 300
-    @AppStorage("prReviewPrompt") private var prReviewPrompt = ""
-
-    @State private var selectedTab = SettingsTab.aiProvider
+    @State private var selectedTab: SettingsTab
     @State private var settingsVM = AISettingsViewModel()
+
+    init(initialTab: SettingsTab = .aiProvider) {
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +31,7 @@ struct SettingsView: View {
                 switch selectedTab {
                 case .general: generalTab
                 case .aiProvider: AIProviderSettingsView(settingsVM: settingsVM)
-                case .reviews: reviewsTab
+                case .reviews: ReviewSettingsView()
                 case .monitoring: monitoringTab
                 case .accounts: accountsTab
                 }
@@ -37,10 +39,10 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(
-            minWidth: 820,
-            idealWidth: 900,
-            minHeight: 680,
-            idealHeight: 760
+            minWidth: 1_080,
+            idealWidth: 1_180,
+            minHeight: 780,
+            idealHeight: 900
         )
         .background(GRTheme.background(colorScheme))
         .tint(GRTheme.accent)
@@ -88,28 +90,6 @@ struct SettingsView: View {
                         .font(.system(size: 10.5, design: .monospaced))
                         .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
                         .textSelection(.enabled)
-                }
-            }
-        }
-    }
-
-    private var reviewsTab: some View {
-        settingsPage(
-            title: "Review Instructions",
-            subtitle: "Customize the guidance sent to every AI reviewer."
-        ) {
-            settingsCard {
-                TextEditor(text: $prReviewPrompt)
-                    .font(.system(size: 11, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 220)
-                HStack {
-                    Button("Reset to Default") { prReviewPrompt = "" }
-                    Spacer()
-                    Button("Load Default Template") {
-                        prReviewPrompt = PromptBuilder.defaultPRReviewPrompt
-                    }
-                    .buttonStyle(.borderedProminent)
                 }
             }
         }

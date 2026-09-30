@@ -18,6 +18,7 @@ final class PRReviewViewModel {
     var agentReviews: [ReviewAgent: String] = [:]
     var agentErrors: [ReviewAgent: String] = [:]
     var agentLoading: Set<ReviewAgent> = []
+    var agentQueued: Set<ReviewAgent> = []
     var agentCached: Set<ReviewAgent> = []
     var agentVerdicts: [ReviewAgent: Bool] = [:]
 
@@ -25,6 +26,7 @@ final class PRReviewViewModel {
     var customAgentReviews: [String: String] = [:]
     var customAgentErrors: [String: String] = [:]
     var customAgentLoading: Set<String> = []
+    var customAgentQueued: Set<String> = []
     var customAgentCached: Set<String> = []
     var customAgentVerdicts: [String: Bool] = [:]
 
@@ -37,7 +39,8 @@ final class PRReviewViewModel {
     var launchedAgentCount: Int = 0
 
     var isAnyAgentLoading: Bool {
-        !agentLoading.isEmpty || !customAgentLoading.isEmpty
+        !agentLoading.isEmpty || !agentQueued.isEmpty
+            || !customAgentLoading.isEmpty || !customAgentQueued.isEmpty
     }
     var completedAgentCount: Int {
         agentReviews.count + customAgentReviews.count
@@ -65,6 +68,11 @@ final class PRReviewViewModel {
         case custom(String, Result<String, Error>)
     }
 
+    enum ReviewJob: Sendable {
+        case builtIn(ReviewAgent)
+        case custom(CustomReviewAgent)
+    }
+
     func setModelContext(_ context: ModelContext) {
         modelContext = context
     }
@@ -80,6 +88,7 @@ final class PRReviewViewModel {
         agentReviews = [:]
         agentErrors = [:]
         agentLoading = []
+        agentQueued = []
         agentCached = []
 
         do {
@@ -219,11 +228,13 @@ final class PRReviewViewModel {
         agentReviews = [:]
         agentErrors = [:]
         agentLoading = []
+        agentQueued = []
         agentCached = []
         agentVerdicts = [:]
         customAgentReviews = [:]
         customAgentErrors = [:]
         customAgentLoading = []
+        customAgentQueued = []
         customAgentCached = []
         customAgentVerdicts = [:]
         agentDeepReviews = [:]
