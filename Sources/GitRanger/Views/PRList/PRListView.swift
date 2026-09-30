@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PRListView: View {
     @Bindable var viewModel: PRListViewModel
+    @Environment(\.colorScheme) private var colorScheme
     var repo: Repo?
     var onSelectPR: (PullRequest) -> Void
 
@@ -10,25 +11,21 @@ struct PRListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            headerBar
-
-            filterPicker
-
-            Divider()
+            filterBar
 
             Group {
-                if viewModel.isLoading {
+                if viewModel.isLoading && viewModel.pullRequests.isEmpty {
                     ProgressView(viewModel.isGitLabRepo
                         ? "Loading merge requests..."
                         : "Loading pull requests...")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = viewModel.error {
                     errorView(error)
-                } else if viewModel.pullRequests.isEmpty {
+                } else if displayedPRs.isEmpty {
                     ContentUnavailableView(
                         viewModel.isGitLabRepo
-                            ? "No Open Merge Requests"
-                            : "No Open Pull Requests",
+                            ? "No Merge Requests"
+                            : "No Pull Requests",
                         systemImage: "arrow.triangle.pull",
                         description: Text(emptyMessage)
                     )
@@ -38,35 +35,32 @@ struct PRListView: View {
             }
             .frame(maxHeight: .infinity)
         }
-        .navigationTitle(viewModel.isGitLabRepo ? "Merge Requests" : "Pull Requests")
-        .navigationSubtitle(navigationSubtitle)
+        .background(GRTheme.background(colorScheme))
         .onAppear {
             guard let repo, viewModel.pullRequests.isEmpty else { return }
             Task { await viewModel.loadPullRequests(repo: repo) }
         }
-    }
-
-    private var navigationSubtitle: String {
-        let count = viewModel.pullRequests.count
-        switch viewModel.filterMode {
-        case .open: return "\(count) open"
-        case .closed: return "\(count) closed"
-        case .merged: return "\(count) merged"
-        case .pendingMyReview: return "\(count) pending"
+        .onChange(of: repo?.id) { _, _ in
+            selectedPRNumber = nil
+        }
+        .sheet(isPresented: $showReviewPrompt) {
+            if let repo {
+                ReviewPromptSheet(repo: repo, isPresented: $showReviewPrompt)
+            }
         }
     }
 
-    private var emptyMessage: String {
-        let prLabel = viewModel.isGitLabRepo ? "merge requests" : "pull requests"
-        switch viewModel.filterMode {
-        case .open:
-            return "This repository has no open \(prLabel)."
-        case .closed:
-            return "No closed \(prLabel) found."
-        case .merged:
-            return "No merged \(prLabel) found."
-        case .pendingMyReview:
-            return "No \(prLabel) are waiting for your review."
+    private var displayedPRs: [PullRequest] {
+        guard viewModel.filterMode == .pendingMyReview,
+              let user = currentUser else {
+            return viewModel.pullRequests
+        }
+        return viewModel.pullRequests.sorted { lhs, rhs in
+            let lhsWaiting = lhs.isAwaitingReview(by: user)
+                || lhs.wasReviewedBy(user) == nil
+            let rhsWaiting = rhs.isAwaitingReview(by: user)
+                || rhs.wasReviewedBy(user) == nil
+            return lhsWaiting && !rhsWaiting
         }
     }
 
@@ -74,56 +68,125 @@ struct PRListView: View {
         viewModel.currentGhUser ?? viewModel.currentGlUser
     }
 
-    private var prList: some View {
-        List(selection: $selectedPRNumber) {
-            if viewModel.filterMode == .pendingMyReview, let user = currentUser {
-                let waiting = viewModel.pullRequests.filter {
-                    $0.isAwaitingReview(by: user)
-                        || $0.wasReviewedBy(user) == nil
-                }
-                let approved = viewModel.pullRequests.filter {
-                    $0.wasReviewedBy(user)?.state == "APPROVED"
-                }
-
-                if !waiting.isEmpty {
-                    Section("Waiting for your review") {
-                        prRows(waiting)
-                    }
-                }
-                if !approved.isEmpty {
-                    Section("Approved by you (still open)") {
-                        prRows(approved)
-                    }
-                }
-            } else {
-                prRows(viewModel.pullRequests)
-            }
-
-            if viewModel.hasMore {
-                loadMoreButton
-            }
-        }
-        .listStyle(.plain)
-        .onChange(of: selectedPRNumber) { _, newNumber in
-            guard let newNumber,
-                  let pr = viewModel.pullRequests.first(where: { $0.number == newNumber })
-            else { return }
-            onSelectPR(pr)
+    private var emptyMessage: String {
+        let label = viewModel.isGitLabRepo ? "merge requests" : "pull requests"
+        switch viewModel.filterMode {
+        case .open: return "This repository has no open \(label)."
+        case .closed: return "No closed \(label) found."
+        case .merged: return "No merged \(label) found."
+        case .pendingMyReview: return "No \(label) are waiting for your review."
         }
     }
 
-    private func prRows(_ prs: [PullRequest]) -> some View {
-        ForEach(prs) { pr in
-            PRItemView(
-                pr: pr,
-                isSelected: selectedPRNumber == pr.number,
-                currentUser: currentUser
-            )
-            .tag(pr.number)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                selectedPRNumber = pr.number
-                onSelectPR(pr)
+    private var filterBar: some View {
+        HStack(spacing: 16) {
+            ForEach(PRFilterMode.allCases, id: \.self) { mode in
+                Button {
+                    guard mode != viewModel.filterMode else { return }
+                    viewModel.filterMode = mode
+                    selectedPRNumber = nil
+                    guard let repo else { return }
+                    Task { await viewModel.refresh(repo: repo) }
+                } label: {
+                    VStack(spacing: 4) {
+                        HStack(spacing: 3) {
+                            Text(mode.rawValue)
+                                .font(.system(size: 11, weight:
+                                    viewModel.filterMode == mode ? .semibold : .regular))
+                            if viewModel.filterMode == mode {
+                                Text("\(viewModel.pullRequests.count)")
+                                    .foregroundStyle(GRTheme.muted(colorScheme))
+                            }
+                        }
+                        Rectangle()
+                            .fill(viewModel.filterMode == mode ? GRTheme.accent : .clear)
+                            .frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(
+                    viewModel.filterMode == mode
+                        ? Color.primary : GRTheme.muted(colorScheme)
+                )
+            }
+
+            Spacer(minLength: 4)
+
+            if let currentUser {
+                Text(currentUser)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(GRTheme.muted(colorScheme))
+                    .lineLimit(1)
+            }
+
+            Menu {
+                Button("Refresh") {
+                    guard let repo else { return }
+                    Task { await viewModel.refresh(repo: repo) }
+                }
+                Button("Review Instructions...") {
+                    showReviewPrompt = true
+                }
+                accountMenu
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .frame(height: 56, alignment: .top)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(GRTheme.line(colorScheme)).frame(height: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var accountMenu: some View {
+        if let repo, viewModel.isGitHubRepo, !viewModel.ghAccounts.isEmpty {
+            Menu("GitHub Account") {
+                ForEach(viewModel.ghAccounts, id: \.self) { account in
+                    Button(account) {
+                        repo.ghAccount = account
+                        Task { await viewModel.refresh(repo: repo) }
+                    }
+                }
+            }
+        }
+        if let repo, viewModel.isGitLabRepo, !viewModel.glHosts.isEmpty {
+            Menu("GitLab Host") {
+                ForEach(viewModel.glHosts, id: \.self) { host in
+                    Button(host) {
+                        repo.glHost = host
+                        Task { await viewModel.refresh(repo: repo) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var prList: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(displayedPRs) { pr in
+                    Button {
+                        selectedPRNumber = pr.number
+                        onSelectPR(pr)
+                    } label: {
+                        PRItemView(
+                            pr: pr,
+                            isSelected: selectedPRNumber == pr.number,
+                            currentUser: currentUser
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if viewModel.hasMore {
+                    loadMoreButton
+                }
             }
         }
     }
@@ -133,128 +196,18 @@ struct PRListView: View {
             guard let repo else { return }
             Task { await viewModel.loadMore(repo: repo) }
         } label: {
-            if viewModel.isLoadingMore {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 14, height: 14)
-                    Text("Loading more...")
-                        .font(.caption)
+            HStack(spacing: 6) {
+                if viewModel.isLoadingMore {
+                    ProgressView().controlSize(.small)
                 }
-            } else {
-                Text("Load More")
-                    .font(.caption)
+                Text(viewModel.isLoadingMore ? "Loading more..." : "Load More")
+                    .font(.system(size: 11, weight: .medium))
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
+        .buttonStyle(.plain)
         .disabled(viewModel.isLoadingMore)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-    }
-
-    private var filterPicker: some View {
-        Picker("", selection: $viewModel.filterMode) {
-            ForEach(PRFilterMode.allCases, id: \.self) { mode in
-                Text(mode.rawValue).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .onChange(of: viewModel.filterMode) { _, _ in
-            guard let repo else { return }
-            Task { await viewModel.refresh(repo: repo) }
-        }
-    }
-
-    private var headerBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.pull")
-                .foregroundStyle(.secondary)
-
-            Text(navigationSubtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            if !viewModel.ghAccounts.isEmpty, let repo, viewModel.isGitHubRepo {
-                Picker("", selection: Binding(
-                    get: { repo.ghAccount ?? viewModel.ghAccounts.first ?? "" },
-                    set: { newAccount in
-                        repo.ghAccount = newAccount
-                        repo.updatedAt = Date()
-                        Task { await viewModel.refresh(repo: repo) }
-                    }
-                )) {
-                    ForEach(viewModel.ghAccounts, id: \.self) { account in
-                        Text(account).tag(account)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 130)
-                .controlSize(.small)
-                .help("GitHub account for API access")
-            }
-
-            if !viewModel.glHosts.isEmpty, let repo, viewModel.isGitLabRepo {
-                Picker("", selection: Binding(
-                    get: { repo.glHost ?? viewModel.glHosts.first ?? "" },
-                    set: { newHost in
-                        repo.glHost = newHost
-                        repo.updatedAt = Date()
-                        Task { await viewModel.refresh(repo: repo) }
-                    }
-                )) {
-                    ForEach(viewModel.glHosts, id: \.self) { host in
-                        Text(host).tag(host)
-                    }
-                }
-                .labelsHidden()
-                .frame(maxWidth: 130)
-                .controlSize(.small)
-                .help("GitLab host for API access")
-            }
-
-            Button {
-                showReviewPrompt = true
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "pencil.line")
-                    if repo?.reviewPrompt != nil {
-                        Circle()
-                            .fill(.blue)
-                            .frame(width: 6, height: 6)
-                    }
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help("Edit review instructions for this repo")
-
-            Button {
-                guard let repo else { return }
-                Task { await viewModel.refresh(repo: repo) }
-            } label: {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 16, height: 16)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(viewModel.isLoading)
-            .help("Refresh pull requests")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .sheet(isPresented: $showReviewPrompt) {
-            if let repo {
-                ReviewPromptSheet(repo: repo, isPresented: $showReviewPrompt)
-            }
-        }
     }
 
     private func errorView(_ message: String) -> some View {
@@ -262,47 +215,17 @@ struct PRListView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
-
             Text(message)
-                .font(.body)
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-
-            if viewModel.ghAvailable == false, viewModel.isGitHubRepo {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Install GitHub CLI:")
-                            .font(.caption.bold())
-                        Text("brew install gh")
-                            .font(.system(.caption, design: .monospaced))
-                        Text("gh auth login")
-                            .font(.system(.caption, design: .monospaced))
-                    }
-                }
-                .frame(maxWidth: 250)
-            }
-
-            if viewModel.glAvailable == false, viewModel.isGitLabRepo {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Install GitLab CLI:")
-                            .font(.caption.bold())
-                        Text("brew install glab")
-                            .font(.system(.caption, design: .monospaced))
-                        Text("glab auth login")
-                            .font(.system(.caption, design: .monospaced))
-                    }
-                }
-                .frame(maxWidth: 250)
-            }
-
             Button("Retry") {
                 guard let repo else { return }
                 Task { await viewModel.loadPullRequests(repo: repo) }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        .padding(24)
     }
 }

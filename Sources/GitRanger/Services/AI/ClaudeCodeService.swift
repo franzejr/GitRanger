@@ -14,11 +14,35 @@ final class ClaudeCodeService: AIServiceProtocol {
     func isAvailable() async -> Bool {
         let binary = claudeBinary
         if binary != "claude" {
-            return FileManager.default.isExecutableFile(atPath: binary)
+            guard FileManager.default.isExecutableFile(atPath: binary) else {
+                return false
+            }
+        } else {
+            do {
+                let output = try await shell.execute("which", arguments: ["claude"])
+                guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return false
+                }
+            } catch {
+                return false
+            }
         }
+
         do {
-            let output = try await shell.execute("which", arguments: ["claude"])
-            return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let result = try await executeClaudeBinary(
+                arguments: ["auth", "status"],
+                env: ProcessInfo.processInfo.environment,
+                stdinData: Data(),
+                timeout: 10
+            )
+            guard result.exitCode == 0,
+                  let data = result.stdout.data(using: .utf8),
+                  let status = try? JSONDecoder().decode(
+                    ClaudeAuthStatus.self, from: data
+                  ) else {
+                return false
+            }
+            return status.loggedIn
         } catch {
             return false
         }
@@ -29,6 +53,9 @@ final class ClaudeCodeService: AIServiceProtocol {
         diff: String,
         repoPath: URL?
     ) async throws -> CommitSummary {
+        let useRepoContext = UserDefaults.standard.object(
+            forKey: "claudeRepoContext"
+        ) as? Bool ?? true
         let truncatedDiff = String(diff.prefix(12000))
         let prompt = PromptBuilder.buildCommitPrompt(
             commitMessage: commitMessage,
@@ -37,20 +64,23 @@ final class ClaudeCodeService: AIServiceProtocol {
 
         let output = try await runClaude(
             prompt: prompt,
-            repoPath: repoPath,
+            repoPath: useRepoContext ? repoPath : nil,
             timeout: 90,
-            useTools: true
+            useTools: useRepoContext
         )
 
         return try PromptBuilder.parseCommitSummary(raw: output)
     }
 
     func generate(prompt: String, repoPath: URL?) async throws -> String {
-        try await runClaude(
+        let useRepoContext = UserDefaults.standard.object(
+            forKey: "claudeRepoContext"
+        ) as? Bool ?? true
+        return try await runClaude(
             prompt: prompt,
-            repoPath: nil,
+            repoPath: useRepoContext ? repoPath : nil,
             timeout: 300,
-            useTools: false
+            useTools: useRepoContext
         )
     }
 
@@ -88,10 +118,11 @@ final class ClaudeCodeService: AIServiceProtocol {
     private func buildArguments(
         useTools: Bool, repoPath: URL?
     ) -> [String] {
+        let model = UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku"
         var args = [
             "-p", "-",
             "--output-format", "json",
-            "--model", "haiku",
+            "--model", model,
             "--no-session-persistence"
         ]
         if useTools {
@@ -183,4 +214,8 @@ final class ClaudeCodeService: AIServiceProtocol {
         }
         return envelope.result
     }
+}
+
+private struct ClaudeAuthStatus: Decodable {
+    let loggedIn: Bool
 }

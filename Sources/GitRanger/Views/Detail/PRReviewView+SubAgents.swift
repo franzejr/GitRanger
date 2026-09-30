@@ -1,7 +1,4 @@
-import AppKit
 import SwiftUI
-
-// MARK: - Sub-Agent Review Sections
 
 @MainActor
 extension PRReviewView {
@@ -14,124 +11,128 @@ extension PRReviewView {
     }
 
     var subAgentReviewContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
+            narrativeCard
             subAgentProgressHeader
 
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
+                    count: ReviewAgent.allCases.count
+                ),
+                spacing: 8
+            ) {
+                ForEach(ReviewAgent.allCases) { agent in
+                    agentCard(agent)
+                }
+            }
+
             ForEach(ReviewAgent.allCases) { agent in
-                let isDisabled = disabledAgentSet.contains(agent.rawValue)
-                if isDisabled {
-                    disabledBuiltInAgentRow(agent)
-                } else {
-                    agentSection(agent)
+                if expandedAgents.contains(agent) {
+                    agentExpandedPanel(agent)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
 
             ForEach(repo?.customAgents ?? [], id: \.id) { agent in
                 if agent.isEnabled {
                     customAgentSection(agent)
-                } else {
-                    disabledCustomAgentRow(
-                        icon: agent.icon, name: agent.name
-                    )
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var narrativeCard: some View {
+        if let text = viewModel.agentReviews[.summary] {
+            HStack(alignment: .top, spacing: 14) {
+                GRMonogram(size: 26)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("NARRATIVE · AI REVIEW")
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                    markdownView(PRReviewViewModel.stripVerdictLine(text))
+                        .font(.system(size: 12.5))
+                }
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .grCard()
         }
     }
 
     var subAgentProgressHeader: some View {
-        HStack {
-            Text(
-                "\(viewModel.completedAgentCount)/\(viewModel.totalAgentCount) reviews complete"
+        HStack(spacing: 8) {
+            GRSectionLabel(
+                title: "Sub-agent review · \(viewModel.completedAgentCount)/\(enabledReviewCount) complete"
             )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
 
             if viewModel.isAnyAgentLoading {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 14, height: 14)
+                ProgressView().controlSize(.small)
             }
 
             Spacer()
 
+            if !viewModel.agentCached.isEmpty,
+               let sha = viewModel.selectedPR?.headRefOid {
+                Text("cached · head \(String(sha.prefix(7)))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
             if viewModel.completedAgentCount > 0 && !viewModel.isAnyAgentLoading {
                 Button {
                     guard let repo else { return }
-                    Task {
-                        await viewModel.postReviewAsComment(repo: repo)
-                    }
+                    Task { await viewModel.postReviewAsComment(repo: repo) }
                 } label: {
-                    if viewModel.isSubmittingAction {
-                        ProgressView()
-                            .scaleEffect(0.5)
-                            .frame(width: 14, height: 14)
-                    } else {
-                        Label("Post as Comment", systemImage: "paperplane")
-                    }
+                    Image(systemName: "paperplane")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .help("Post reviews as a comment")
                 .disabled(viewModel.isSubmittingAction)
-                .help("Post the AI review summary as a comment on this PR")
             }
-
-            Button {
-                guard let repo else { return }
-                Task {
-                    await viewModel.generateSubAgentReviews(repo: repo)
-                }
-            } label: {
-                Label("Re-run All", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(viewModel.isAnyAgentLoading)
         }
     }
 
-    // MARK: - Built-in Agent Section
-
-    @ViewBuilder
-    func agentSection(_ agent: ReviewAgent) -> some View {
-        let isExpanded = expandedAgents.contains(agent)
-
-        VStack(alignment: .leading, spacing: 0) {
-            agentHeaderRow(agent, isExpanded: isExpanded)
-
-            if isExpanded {
-                agentExpandedContent(agent)
-                    .padding(.top, 8)
-                    .padding(.leading, 22)
-                    .transition(
-                        .opacity.combined(with: .move(edge: .top))
-                    )
-            }
-        }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+    private var enabledReviewCount: Int {
+        ReviewAgent.allCases.filter {
+            !disabledAgentSet.contains($0.rawValue)
+        }.count + enabledCustomAgents.count
     }
 
-    private func agentHeaderRow(
-        _ agent: ReviewAgent, isExpanded: Bool
-    ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "chevron.right")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .animation(
-                    .easeInOut(duration: 0.15), value: isExpanded
-                )
+    private func agentCard(_ agent: ReviewAgent) -> some View {
+        let isDisabled = disabledAgentSet.contains(agent.rawValue)
+        let passed = viewModel.agentVerdicts[agent]
+        let warning = passed == false
 
-            agentSectionLabel(agent)
+        return VStack(alignment: .leading, spacing: 8) {
+            agentCardHeader(agent, disabled: isDisabled)
+
+            Text(agent.shortDescription)
+                .font(.system(size: 10.5))
+                .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
+                .lineLimit(3)
+                .frame(minHeight: 30, alignment: .topLeading)
+
+            Text(agentVerdictLabel(agent, disabled: isDisabled))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(agentVerdictColor(agent, disabled: isDisabled))
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+        .background(GRTheme.card(colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(warning ? GRTheme.warning : GRTheme.line(colorScheme), lineWidth: 1)
+        }
+        .opacity(isDisabled ? 0.45 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                if isExpanded {
+            guard !isDisabled else { return }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                if expandedAgents.contains(agent) {
                     expandedAgents.remove(agent)
                 } else {
                     expandedAgents.insert(agent)
@@ -140,302 +141,171 @@ extension PRReviewView {
         }
     }
 
-    @ViewBuilder
-    private func agentExpandedContent(
-        _ agent: ReviewAgent
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if viewModel.agentLoading.contains(agent) {
-                agentLoadingRow()
-            } else if let error = viewModel.agentErrors[agent] {
-                inlineError(error) {
+    private func agentCardHeader(_ agent: ReviewAgent, disabled: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(agent.displayName)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if !disabled {
+                Button {
                     guard let repo else { return }
-                    Task {
-                        await viewModel.regenerateSingleAgent(
-                            agent, repo: repo
-                        )
-                    }
+                    Task { await viewModel.regenerateSingleAgent(agent, repo: repo) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 8, weight: .semibold))
                 }
-            } else if let text = viewModel.agentReviews[agent] {
-                verdictBanner(for: agent)
-                markdownView(PRReviewViewModel.stripVerdictLine(text))
-                agentActionButtons(agent)
-                deepVerifySection(agent)
+                .buttonStyle(.plain)
+                .help("Re-run \(agent.displayName)")
+                agentStatusDot(agent)
             }
         }
     }
 
     @ViewBuilder
-    private func agentActionButtons(_ agent: ReviewAgent) -> some View {
-        HStack(spacing: 8) {
-            if viewModel.agentCached.contains(agent) {
-                cachedBadge
-            }
+    private func agentStatusDot(_ agent: ReviewAgent) -> some View {
+        if viewModel.agentLoading.contains(agent) {
+            ProgressView().controlSize(.mini)
+        } else if viewModel.agentErrors[agent] != nil {
+            Circle().fill(GRTheme.danger).frame(width: 8, height: 8)
+        } else if let passed = viewModel.agentVerdicts[agent] {
+            Circle()
+                .fill(passed ? GRTheme.success : GRTheme.warning)
+                .frame(width: 8, height: 8)
+        } else if viewModel.agentReviews[agent] != nil {
+            Circle().fill(GRTheme.success).frame(width: 8, height: 8)
+        }
+    }
 
-            Button {
-                guard let repo else { return }
-                Task {
-                    await viewModel.regenerateSingleAgent(
-                        agent, repo: repo
-                    )
+    private func agentVerdictLabel(_ agent: ReviewAgent, disabled: Bool) -> String {
+        if disabled { return "DISABLED" }
+        if viewModel.agentLoading.contains(agent) { return "ANALYZING" }
+        if viewModel.agentErrors[agent] != nil { return "FAILED" }
+        if let passed = viewModel.agentVerdicts[agent] {
+            return passed ? "PASSED" : "ISSUES FOUND"
+        }
+        if viewModel.agentReviews[agent] != nil { return "COMPLETE" }
+        return "PENDING"
+    }
+
+    private func agentVerdictColor(_ agent: ReviewAgent, disabled: Bool) -> Color {
+        if disabled { return GRTheme.muted(colorScheme) }
+        if viewModel.agentErrors[agent] != nil { return GRTheme.danger }
+        if viewModel.agentVerdicts[agent] == false { return GRTheme.warning }
+        if viewModel.agentReviews[agent] != nil { return GRTheme.success }
+        return GRTheme.muted(colorScheme)
+    }
+
+    @ViewBuilder
+    private func agentExpandedPanel(_ agent: ReviewAgent) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if viewModel.agentLoading.contains(agent) {
+                agentLoadingRow()
+            } else if let error = viewModel.agentErrors[agent] {
+                inlineError(error) {
+                    guard let repo else { return }
+                    Task { await viewModel.regenerateSingleAgent(agent, repo: repo) }
                 }
-            } label: {
-                Label("Re-run", systemImage: "arrow.clockwise")
+            } else if let text = viewModel.agentReviews[agent] {
+                HStack(alignment: .top, spacing: 10) {
+                    Circle()
+                        .fill(viewModel.agentVerdicts[agent] == false
+                            ? GRTheme.warning : GRTheme.success)
+                        .frame(width: 8, height: 8)
+                        .padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(agent.displayName)
+                            .font(.system(size: 11.5, weight: .semibold))
+                        markdownView(PRReviewViewModel.stripVerdictLine(text))
+                            .font(.system(size: 11.5))
+                        agentActions(agent)
+                        deepVerifySection(agent)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .grCard(radius: 9)
+    }
+
+    private func agentActions(_ agent: ReviewAgent) -> some View {
+        HStack(spacing: 8) {
+            if viewModel.agentCached.contains(agent) { cachedBadge }
+            Button("Re-run") {
+                guard let repo else { return }
+                Task { await viewModel.regenerateSingleAgent(agent, repo: repo) }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-
-            if viewModel.agentReviews[agent] != nil {
-                Button {
-                    guard let repo else { return }
-                    Task {
-                        await viewModel.deepVerifyAgent(agent, repo: repo)
-                    }
-                } label: {
-                    Label("Verify", systemImage: "checkmark.shield")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("Re-run a thorough second pass to verify every finding")
-                .disabled(viewModel.agentDeepLoading.contains(agent))
+            Button("Verify") {
+                guard let repo else { return }
+                Task { await viewModel.deepVerifyAgent(agent, repo: repo) }
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(viewModel.agentDeepLoading.contains(agent))
         }
     }
 
     @ViewBuilder
     private func deepVerifySection(_ agent: ReviewAgent) -> some View {
         if viewModel.agentDeepLoading.contains(agent) {
-            Divider().padding(.vertical, 4)
-            HStack(spacing: 10) {
-                ProgressView().scaleEffect(0.7)
-                Text("Verifying review...")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 8)
+            agentLoadingRow()
         } else if let error = viewModel.agentDeepErrors[agent] {
-            Divider().padding(.vertical, 4)
             inlineError(error) {
                 guard let repo else { return }
-                Task {
-                    await viewModel.deepVerifyAgent(agent, repo: repo)
-                }
+                Task { await viewModel.deepVerifyAgent(agent, repo: repo) }
             }
         } else if let text = viewModel.agentDeepReviews[agent] {
-            Divider().padding(.vertical, 4)
-            deepVerifyBanner(agent)
+            Divider()
+            customVerdictBanner(for: agent.rawValue)
             markdownView(PRReviewViewModel.stripVerdictLine(text))
-        }
-    }
-
-    @ViewBuilder
-    private func deepVerifyBanner(_ agent: ReviewAgent) -> some View {
-        if let passed = viewModel.agentDeepVerdicts[agent] {
-            HStack(spacing: 6) {
-                Image(
-                    systemName: passed
-                        ? "checkmark.shield.fill"
-                        : "exclamationmark.shield.fill"
-                )
-                .font(.subheadline)
-                Text(passed
-                    ? "Verification: Review is accurate"
-                    : "Verification: Corrections needed"
-                )
-                .font(.subheadline.weight(.medium))
-            }
-            .foregroundStyle(passed ? .green : .orange)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                (passed ? Color.green : Color.orange).opacity(0.1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-    }
-
-    func disabledBuiltInAgentRow(
-        _ agent: ReviewAgent
-    ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: agent.icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-
-            Text(agent.displayName)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            Text(agent.shortDescription)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-
-            Spacer()
-
-            disabledBadge
-        }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.25)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    func disabledCustomAgentRow(
-        icon: String, name: String
-    ) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-
-            Text(name)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            disabledBadge
-        }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.25)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    // MARK: - Shared Sub-Agent Components
-
-    func agentSectionLabel(_ agent: ReviewAgent) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: agent.icon)
-                .foregroundStyle(agent.iconColor)
-                .frame(width: 20)
-
-            Text(agent.displayName)
-                .font(.subheadline.weight(.medium))
-
-            Text(agent.shortDescription)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-
-            Spacer()
-
-            agentStatusBadge(agent)
-        }
-    }
-
-    @ViewBuilder
-    func agentStatusBadge(_ agent: ReviewAgent) -> some View {
-        if viewModel.agentLoading.contains(agent) {
-            ProgressView()
-                .scaleEffect(0.5)
-                .frame(width: 14, height: 14)
-        } else if viewModel.agentErrors[agent] != nil {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .font(.caption)
-        } else if viewModel.agentReviews[agent] != nil {
-            verdictCheckmark(viewModel.agentVerdicts[agent])
         }
     }
 
     @ViewBuilder
     func customAgentStatusBadge(_ agentId: String) -> some View {
         if viewModel.customAgentLoading.contains(agentId) {
-            ProgressView()
-                .scaleEffect(0.5)
-                .frame(width: 14, height: 14)
+            ProgressView().controlSize(.mini)
         } else if viewModel.customAgentErrors[agentId] != nil {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .font(.caption)
-        } else if viewModel.customAgentReviews[agentId] != nil {
-            verdictCheckmark(viewModel.customAgentVerdicts[agentId])
-        }
-    }
-
-    @ViewBuilder
-    private func verdictCheckmark(_ passed: Bool?) -> some View {
-        if let passed {
-            Image(
-                systemName: passed
-                    ? "checkmark.circle.fill"
-                    : "exclamationmark.circle.fill"
-            )
-            .foregroundStyle(passed ? .green : .orange)
-            .font(.caption)
-        } else {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.caption)
-        }
-    }
-
-    @ViewBuilder
-    func verdictBanner(for agent: ReviewAgent) -> some View {
-        if let passed = viewModel.agentVerdicts[agent] {
-            verdictBannerContent(passed: passed)
+                .foregroundStyle(GRTheme.danger)
+        } else if let passed = viewModel.customAgentVerdicts[agentId] {
+            Image(systemName: passed ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundStyle(passed ? GRTheme.success : GRTheme.warning)
         }
     }
 
     @ViewBuilder
     func customVerdictBanner(for agentId: String) -> some View {
-        if let passed = viewModel.customAgentVerdicts[agentId] {
-            verdictBannerContent(passed: passed)
-        }
-    }
-
-    private func verdictBannerContent(passed: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(
-                systemName: passed
-                    ? "checkmark.shield.fill"
-                    : "exclamationmark.shield.fill"
+        let passed = viewModel.customAgentVerdicts[agentId]
+            ?? viewModel.agentDeepVerdicts[ReviewAgent(rawValue: agentId) ?? .summary]
+        if let passed {
+            Label(
+                passed ? "Passed" : "Issues Found",
+                systemImage: passed ? "checkmark.shield.fill" : "exclamationmark.shield.fill"
             )
-            .font(.subheadline)
-            Text(passed ? "Passed" : "Issues Found")
-                .font(.subheadline.weight(.medium))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(passed ? GRTheme.success : GRTheme.warning)
         }
-        .foregroundStyle(passed ? .green : .orange)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            (passed ? Color.green : Color.orange).opacity(0.1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     func agentLoadingRow() -> some View {
-        HStack(spacing: 10) {
-            ProgressView().scaleEffect(0.7)
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
             Text("Analyzing...")
-                .font(.callout)
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 8)
     }
 
     var cachedBadge: some View {
-        Text("Cached")
-            .font(.caption2)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.quaternary)
-            .clipShape(Capsule())
-    }
-
-    var disabledBadge: some View {
-        Text("Disabled")
-            .font(.caption2)
+        Text("CACHED")
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.quaternary)
-            .clipShape(Capsule())
+            .background(GRTheme.segment(colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

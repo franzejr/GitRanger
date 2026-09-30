@@ -78,6 +78,7 @@ struct GitRangerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .tint(GRTheme.accent)
                 .onAppear {
                     // Activate the app window (needed for SPM builds without app bundle)
                     NSApplication.shared.setActivationPolicy(.regular)
@@ -94,6 +95,8 @@ struct GitRangerApp: App {
                 }
         }
         .modelContainer(sharedModelContainer)
+        .defaultSize(width: 1280, height: 820)
+        .defaultPosition(.center)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About GitRanger") {
@@ -104,6 +107,7 @@ struct GitRangerApp: App {
 
         Settings {
             SettingsView()
+                .tint(GRTheme.accent)
         }
 
         MenuBarExtra {

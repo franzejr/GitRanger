@@ -10,6 +10,7 @@ enum ContentMode: String, CaseIterable {
 @MainActor
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var repoListVM = RepoListViewModel()
     @State private var commitListVM = CommitListViewModel()
@@ -24,12 +25,16 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             RepoListView(viewModel: repoListVM)
+                .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
         } content: {
             contentColumn
+                .navigationSplitViewColumnWidth(min: 330, ideal: 380, max: 440)
         } detail: {
             detailColumn
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 1_000, minHeight: 640)
+        .background(GRTheme.background(colorScheme))
         .onAppear(perform: initializeViewModels)
         .onChange(of: repoListVM.selectedRepoId) { _, newId in
             handleRepoChanged(newId)
@@ -52,6 +57,7 @@ struct ContentView: View {
                     changesContent
                 }
             }
+            .background(GRTheme.background(colorScheme))
         } else {
             ContentUnavailableView(
                 "Select a Repository",
@@ -64,7 +70,7 @@ struct ContentView: View {
     @ViewBuilder
     private var detailColumn: some View {
         if contentMode == .changes {
-            ChangesDetailView(viewModel: changesVM)
+            ChangesDetailView(viewModel: changesVM, repo: repoListVM.selectedRepo)
         } else if narrativeVM.isLoading || narrativeVM.narrative != nil || narrativeVM.error != nil {
             NarrativeView(viewModel: narrativeVM)
         } else if prReviewVM.selectedPR != nil {
@@ -89,9 +95,17 @@ struct ContentView: View {
             }
         }
         .pickerStyle(.segmented)
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .labelsHidden()
+        .controlSize(.small)
+        .frame(maxWidth: 330)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .background(GRTheme.background(colorScheme))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(GRTheme.line(colorScheme))
+                .frame(height: 1)
+        }
     }
 
     private var commitsContent: some View {

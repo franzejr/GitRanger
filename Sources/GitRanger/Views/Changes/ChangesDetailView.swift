@@ -2,93 +2,110 @@ import SwiftUI
 
 struct ChangesDetailView: View {
     @Bindable var viewModel: ChangesViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    var repo: Repo?
+    @State private var layout = DiffLayout.inline
+
+    private enum DiffLayout: String, CaseIterable {
+        case inline = "Inline"
+        case split = "Split"
+    }
 
     var body: some View {
-        if let file = viewModel.selectedFile {
-            fileDetail(file)
-        } else {
-            ContentUnavailableView(
-                "Select a File",
-                systemImage: "doc.text",
-                description: Text("Choose a changed file to view its diff.")
-            )
+        Group {
+            if let file = viewModel.selectedFile {
+                fileDetail(file)
+            } else {
+                ContentUnavailableView(
+                    "Select a File",
+                    systemImage: "doc.text",
+                    description: Text("Choose a changed file to view its diff.")
+                )
+            }
         }
+        .background(GRTheme.background(colorScheme))
     }
 
     private func fileDetail(_ file: ChangedFile) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             fileHeader(file)
-            Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let diff = viewModel.fileDiff, !diff.isEmpty {
-                        GroupBox {
-                            DiffView(diff: diff)
-                        }
-                    } else if file.status == .untracked {
-                        Text("New file — stage it to see the diff.")
-                            .foregroundStyle(.secondary)
-                            .padding()
-                    } else {
-                        Text("No changes to display.")
-                            .foregroundStyle(.secondary)
-                            .padding()
-                    }
-                }
-                .padding()
+            if let diff = viewModel.fileDiff, !diff.isEmpty {
+                DiffView(
+                    diff: diff,
+                    presentation: layout == .inline ? .inline : .split
+                )
+                    .padding(12)
+            } else if file.status == .untracked {
+                Text("New file — stage it to see the diff.")
+                    .foregroundStyle(.secondary)
+                    .padding(24)
+            } else {
+                Text("No changes to display.")
+                    .foregroundStyle(.secondary)
+                    .padding(24)
             }
         }
     }
 
     private func fileHeader(_ file: ChangedFile) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: fileIcon(for: file.status))
-                .foregroundStyle(fileColor(for: file.status))
-
+        HStack(spacing: 10) {
             Text(file.path)
-                .font(.system(.headline, design: .monospaced))
+                .font(.system(size: 11, design: .monospaced))
                 .lineLimit(1)
 
-            Text(file.status.label)
-                .font(.caption)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(fileColor(for: file.status).opacity(0.15))
-                .foregroundStyle(fileColor(for: file.status))
-                .clipShape(Capsule())
-
-            if file.isStaged {
-                Text("Staged")
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.blue.opacity(0.15))
-                    .foregroundStyle(.blue)
-                    .clipShape(Capsule())
+            if additions > 0 {
+                Text("+\(additions)")
+                    .foregroundStyle(GRTheme.success)
+            }
+            if deletions > 0 {
+                Text("−\(deletions)")
+                    .foregroundStyle(GRTheme.danger)
             }
 
             Spacer()
+
+            Picker("Layout", selection: $layout) {
+                ForEach(DiffLayout.allCases, id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(width: 110)
+
+            if !file.isStaged, file.status != .untracked {
+                Button("Discard", role: .destructive) {
+                    guard let repo else { return }
+                    Task { await viewModel.discardChanges(file, repo: repo) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .foregroundStyle(GRTheme.danger)
+            }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .font(.system(size: 10, design: .monospaced))
+        .padding(.horizontal, 18)
+        .frame(height: 48)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(GRTheme.line(colorScheme)).frame(height: 1)
+        }
     }
 
-    private func fileIcon(for status: FileStatus) -> String {
-        switch status {
-        case .modified: "pencil.circle.fill"
-        case .added, .untracked: "plus.circle.fill"
-        case .deleted: "minus.circle.fill"
-        case .renamed: "arrow.right.circle.fill"
-        }
+    private var additions: Int {
+        diffLines.filter {
+            $0.hasPrefix("+") && !$0.hasPrefix("+++")
+        }.count
     }
 
-    private func fileColor(for status: FileStatus) -> Color {
-        switch status {
-        case .modified: .orange
-        case .added, .untracked: .green
-        case .deleted: .red
-        case .renamed: .blue
-        }
+    private var deletions: Int {
+        diffLines.filter {
+            $0.hasPrefix("-") && !$0.hasPrefix("---")
+        }.count
+    }
+
+    private var diffLines: [String] {
+        viewModel.fileDiff?.components(separatedBy: "\n") ?? []
     }
 }

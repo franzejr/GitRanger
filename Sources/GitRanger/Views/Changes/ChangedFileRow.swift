@@ -2,74 +2,51 @@ import SwiftUI
 
 struct ChangedFileRow: View {
     let file: ChangedFile
+    var isSelected = false
+    let onSelect: () -> Void
     let onToggle: () -> Void
     let onDiscard: (() -> Void)?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button {
-                onToggle()
-            } label: {
+        HStack(spacing: 8) {
+            Button(action: onToggle) {
                 Image(systemName: file.isStaged ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(file.isStaged ? .blue : .secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(file.isStaged ? GRTheme.accent : .secondary)
             }
             .buttonStyle(.plain)
 
-            statusBadge
-
-            Text(file.fileName)
-                .font(.body)
+            Text(file.path)
+                .font(.system(size: 10.5, design: .monospaced))
                 .lineLimit(1)
 
-            if let dir = file.directory {
-                Text(dir)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
+            Spacer(minLength: 4)
 
-            Spacer()
-
-            if !file.isStaged && file.status != .untracked, let onDiscard {
-                Button {
-                    onDiscard()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Discard changes")
-            }
+            Text(file.status.rawValue)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(statusColor)
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(isSelected ? GRTheme.selection(colorScheme) : .clear)
         .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
         .contextMenu {
-            Button(file.isStaged ? "Unstage" : "Stage") {
-                onToggle()
-            }
+            Button(file.isStaged ? "Unstage" : "Stage", action: onToggle)
             if let onDiscard {
                 Divider()
-                Button("Discard Changes", role: .destructive) {
-                    onDiscard()
-                }
+                Button("Discard Changes", role: .destructive, action: onDiscard)
             }
         }
-    }
-
-    private var statusBadge: some View {
-        Text(file.status.rawValue)
-            .font(.system(.caption2, design: .monospaced, weight: .bold))
-            .foregroundStyle(statusColor)
-            .frame(width: 16)
     }
 
     private var statusColor: Color {
         switch file.status {
-        case .modified: .orange
-        case .added, .untracked: .green
-        case .deleted: .red
-        case .renamed: .blue
+        case .modified: GRTheme.warning
+        case .added, .untracked: GRTheme.success
+        case .deleted: GRTheme.danger
+        case .renamed: GRTheme.link(colorScheme)
         }
     }
 }

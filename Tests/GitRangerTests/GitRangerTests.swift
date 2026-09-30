@@ -53,6 +53,12 @@ final class GitServiceTests: XCTestCase {
         _ = try await shell.execute(
             "git", arguments: ["config", "user.email", "tests@gitranger.local"], cwd: source
         )
+        _ = try await shell.execute(
+            "git", arguments: ["config", "commit.gpgsign", "false"], cwd: source
+        )
+        _ = try await shell.execute(
+            "git", arguments: ["config", "core.hooksPath", "/dev/null"], cwd: source
+        )
         for index in 1...35 {
             _ = try await shell.execute(
                 "git",

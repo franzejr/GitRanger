@@ -2,17 +2,12 @@ import SwiftUI
 
 struct ChangesListView: View {
     @Bindable var viewModel: ChangesViewModel
+    @Environment(\.colorScheme) private var colorScheme
     var repo: Repo?
-    @State private var commitFormHeight: CGFloat = 200
-    @State private var dragStartHeight: CGFloat = 200
-
-    private let minFormHeight: CGFloat = 140
-    private let maxFormHeight: CGFloat = 500
 
     var body: some View {
         VStack(spacing: 0) {
-            headerBar
-            Divider()
+            repositoryHeader
 
             if viewModel.isLoading && viewModel.changedFiles.isEmpty {
                 ProgressView("Checking for changes...")
@@ -23,116 +18,101 @@ struct ChangesListView: View {
                 fileList
             }
 
-            resizeHandle
-            commitForm
-                .frame(height: commitFormHeight)
+            commitPanel
         }
+        .background(GRTheme.sidebar(colorScheme))
         .onAppear {
             guard let repo else { return }
             Task { await viewModel.loadChanges(repo: repo) }
         }
     }
 
-    // MARK: - Header
-
-    private var headerBar: some View {
+    private var repositoryHeader: some View {
         HStack(spacing: 8) {
+            Text(repo?.name ?? "Repository")
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
             if let branch = viewModel.currentBranch {
-                Image(systemName: "arrow.triangle.branch")
-                    .foregroundStyle(.secondary)
                 Text(branch)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.blue)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(GRTheme.muted(colorScheme))
+                    .lineLimit(1)
             }
-
             Spacer()
-
-            Text("\(viewModel.changedFiles.count) changed")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
             Button {
                 guard let repo else { return }
                 Task { await viewModel.loadChanges(repo: repo) }
             } label: {
-                Image(systemName: "arrow.clockwise")
+                if viewModel.isLoading {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(viewModel.isLoading)
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .frame(height: 48)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(GRTheme.line(colorScheme)).frame(height: 1)
+        }
     }
-
-    // MARK: - File List
 
     private var fileList: some View {
-        List(selection: Binding(
-            get: { viewModel.selectedFile?.id },
-            set: { newId in
-                guard let repo else { return }
-                let file = viewModel.changedFiles.first { $0.id == newId }
-                Task { await viewModel.selectFile(file, repo: repo) }
-            }
-        )) {
-            if !viewModel.stagedFiles.isEmpty {
-                stagedSection
-            }
-            if !viewModel.unstagedFiles.isEmpty {
-                unstagedSection
-            }
-        }
-        .listStyle(.plain)
-    }
-
-    private var stagedSection: some View {
-        Section {
-            ForEach(viewModel.stagedFiles) { file in
-                fileRow(file)
-                    .tag(file.id)
-            }
-        } header: {
-            HStack {
-                Text("Staged (\(viewModel.stagedFiles.count))")
-                    .font(.caption.bold())
-                Spacer()
-                Button("Unstage All") {
-                    guard let repo else { return }
-                    Task { await viewModel.unstageAll(repo: repo) }
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if !viewModel.stagedFiles.isEmpty {
+                    sectionHeader(
+                        "Staged · \(viewModel.stagedFiles.count)",
+                        action: "Unstage all"
+                    ) {
+                        guard let repo else { return }
+                        Task { await viewModel.unstageAll(repo: repo) }
+                    }
+                    ForEach(viewModel.stagedFiles) { file in fileRow(file) }
                 }
-                .font(.caption)
-                .buttonStyle(.plain)
-                .foregroundStyle(.blue)
+
+                if !viewModel.unstagedFiles.isEmpty {
+                    sectionHeader(
+                        "Changes · \(viewModel.unstagedFiles.count)",
+                        action: "Stage all"
+                    ) {
+                        guard let repo else { return }
+                        Task { await viewModel.stageAll(repo: repo) }
+                    }
+                    ForEach(viewModel.unstagedFiles) { file in fileRow(file) }
+                }
             }
+            .padding(.bottom, 12)
         }
     }
 
-    private var unstagedSection: some View {
-        Section {
-            ForEach(viewModel.unstagedFiles) { file in
-                fileRow(file)
-                    .tag(file.id)
-            }
-        } header: {
-            HStack {
-                Text("Unstaged (\(viewModel.unstagedFiles.count))")
-                    .font(.caption.bold())
-                Spacer()
-                Button("Stage All") {
-                    guard let repo else { return }
-                    Task { await viewModel.stageAll(repo: repo) }
-                }
-                .font(.caption)
+    private func sectionHeader(
+        _ title: String,
+        action: String,
+        perform: @escaping () -> Void
+    ) -> some View {
+        HStack {
+            GRSectionLabel(title: title)
+            Spacer()
+            Button(action, action: perform)
                 .buttonStyle(.plain)
-                .foregroundStyle(.blue)
-            }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(GRTheme.link(colorScheme))
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 5)
     }
 
     private func fileRow(_ file: ChangedFile) -> some View {
         ChangedFileRow(
             file: file,
+            isSelected: viewModel.selectedFile?.id == file.id,
+            onSelect: {
+                guard let repo else { return }
+                Task { await viewModel.selectFile(file, repo: repo) }
+            },
             onToggle: {
                 guard let repo else { return }
                 Task { await viewModel.toggleStaged(file, repo: repo) }
@@ -144,112 +124,78 @@ struct ChangesListView: View {
         )
     }
 
-    // MARK: - Resize Handle
-
-    private var resizeHandle: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(height: 6)
-            .contentShape(Rectangle())
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(.quaternary)
-                    .frame(width: 36, height: 4)
-            )
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeUpDown.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        let newHeight = dragStartHeight - value.translation.height
-                        commitFormHeight = min(max(newHeight, minFormHeight), maxFormHeight)
-                    }
-                    .onEnded { _ in
-                        dragStartHeight = commitFormHeight
-                    }
-            )
-    }
-
-    // MARK: - Commit Form
-
-    private var commitForm: some View {
+    private var commitPanel: some View {
         VStack(spacing: 8) {
-            TextField("Summary (required)", text: $viewModel.commitSummary)
-                .textFieldStyle(.roundedBorder)
-                .disabled(viewModel.isCommitting)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    GRMonogram(size: 16)
+                    GRSectionLabel(title: "AI Draft")
+                    Spacer()
+                    Button(viewModel.isGeneratingMessage ? "Generating..." : "Regenerate") {
+                        guard let repo else { return }
+                        Task { await viewModel.generateCommitMessage(repo: repo) }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10))
+                    .foregroundStyle(GRTheme.link(colorScheme))
+                    .disabled(viewModel.stagedFiles.isEmpty || viewModel.isGeneratingMessage)
+                }
 
-            TextEditor(text: $viewModel.commitDescription)
-                .font(.body)
-                .frame(maxHeight: .infinity)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(.quaternary)
-                )
-                .disabled(viewModel.isCommitting)
+                TextField("Commit summary", text: $viewModel.commitSummary)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+
+                TextEditor(text: $viewModel.commitDescription)
+                    .font(.system(size: 11))
+                    .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
+                    .scrollContentBackground(.hidden)
+                    .frame(height: 48)
+            }
+            .padding(10)
+            .grCard(radius: 8)
 
             if let error = viewModel.error {
                 Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(.system(size: 10))
+                    .foregroundStyle(GRTheme.danger)
                     .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            HStack(spacing: 8) {
-                aiGenerateButton
-
+            HStack(spacing: 6) {
                 Button {
                     guard let repo else { return }
                     Task { await viewModel.commitChanges(repo: repo) }
                 } label: {
                     if viewModel.isCommitting {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 14, height: 14)
-                            Text("Committing...")
-                        }
+                        ProgressView().controlSize(.small)
                     } else {
-                        Text(commitButtonLabel)
+                        Text("Commit \(viewModel.stagedFiles.count) files")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(GRTheme.accent)
+                .foregroundStyle(GRTheme.onAccent)
+                .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!viewModel.canCommit)
+
+                Text("⌘↵")
+                    .font(.system(size: 11, design: .monospaced))
+                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(GRTheme.line(colorScheme))
+                    }
             }
         }
         .padding(12)
-    }
-
-    private var aiGenerateButton: some View {
-        Button {
-            guard let repo else { return }
-            Task { await viewModel.generateCommitMessage(repo: repo) }
-        } label: {
-            if viewModel.isGeneratingMessage {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 14, height: 14)
-            } else {
-                Image(systemName: "sparkles")
-            }
+        .overlay(alignment: .top) {
+            Rectangle().fill(GRTheme.line(colorScheme)).frame(height: 1)
         }
-        .buttonStyle(.bordered)
-        .disabled(viewModel.stagedFiles.isEmpty || viewModel.isGeneratingMessage)
-        .help("AI-generate commit message from staged changes")
     }
-
-    private var commitButtonLabel: String {
-        if let branch = viewModel.currentBranch {
-            return "Commit to \(branch)"
-        }
-        return "Commit"
-    }
-
-    // MARK: - Empty
 
     private var emptyState: some View {
         ContentUnavailableView(

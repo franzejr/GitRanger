@@ -2,140 +2,107 @@ import SwiftUI
 
 struct PRItemView: View {
     let pr: PullRequest
-    var isSelected: Bool = false
+    var isSelected = false
     var currentUser: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 Text("#\(pr.number)")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(GRTheme.muted(colorScheme))
 
                 Text(pr.title)
-                    .font(.body)
-                    .fontWeight(isSelected ? .semibold : .regular)
+                    .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
 
-                Spacer()
-
+                Spacer(minLength: 4)
                 reviewBadge
-
-                if pr.isDraft {
-                    draftBadge
-                }
+                if pr.isDraft { badge("DRAFT", color: GRTheme.mutedSecondary(colorScheme)) }
             }
 
             HStack(spacing: 8) {
                 Text(pr.authorLogin)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Text(pr.headRefName)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(GRTheme.link(colorScheme))
                     .lineLimit(1)
-
-                Image(systemName: "arrow.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-
-                Text(pr.baseRefName)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                Text("→ \(pr.baseRefName)")
                     .lineLimit(1)
-
-                Spacer()
-
-                reviewerInfo
-
+                Spacer(minLength: 4)
                 if pr.additions > 0 {
-                    Text("+\(pr.additions)")
-                        .font(.caption)
-                        .foregroundStyle(.green)
+                    Text("+\(pr.additions)").foregroundStyle(GRTheme.success)
                 }
                 if pr.deletions > 0 {
-                    Text("-\(pr.deletions)")
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                    Text("−\(pr.deletions)").foregroundStyle(GRTheme.danger)
+                }
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(GRTheme.muted(colorScheme))
+
+            if let statusLine {
+                HStack(spacing: 5) {
+                    Circle().fill(statusLine.color).frame(width: 5, height: 5)
+                    Text(statusLine.text)
+                        .font(.system(size: 10))
+                        .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
                 }
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        )
+        .padding(.vertical, 11)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? GRTheme.selection(colorScheme) : .clear)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(isSelected ? GRTheme.accent : .clear)
+                .frame(width: 2)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(GRTheme.line(colorScheme)).frame(height: 1)
+        }
         .contentShape(Rectangle())
     }
 
     @ViewBuilder
     private var reviewBadge: some View {
         if pr.state == "MERGED" {
-            badge("MERGED", icon: "arrow.triangle.merge", color: .purple)
+            badge("MERGED", color: .purple)
         } else if pr.state == "CLOSED" {
-            badge("CLOSED", icon: "xmark.circle.fill", color: .red)
+            badge("CLOSED", color: GRTheme.danger)
         } else if pr.isApproved {
-            badge("APPROVED", icon: "checkmark.circle.fill", color: .green)
+            badge("APPROVED", color: GRTheme.success)
         } else if pr.hasChangesRequested {
-            badge("CHANGES", icon: "exclamationmark.circle.fill", color: .orange)
+            badge("CHANGES", color: GRTheme.warning)
         } else if let user = currentUser, pr.isAwaitingReview(by: user) {
-            badge("REVIEW", icon: "clock.fill", color: .yellow)
+            badge("REVIEW", color: GRTheme.warning, filled: true)
         }
     }
 
-    private var draftBadge: some View {
-        Text("DRAFT")
-            .font(.system(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.quaternary)
-            .clipShape(Capsule())
-    }
-
-    @ViewBuilder
-    private var reviewerInfo: some View {
-        if let user = currentUser, let status = pr.wasReviewedBy(user) {
-            Text(reviewLabel(for: status.state))
-                .font(.caption2)
-                .foregroundStyle(reviewColor(for: status.state))
+    private var statusLine: (text: String, color: Color)? {
+        guard let currentUser, let review = pr.wasReviewedBy(currentUser) else {
+            return nil
         }
-    }
-
-    private func reviewLabel(for state: String) -> String {
-        switch state {
-        case "APPROVED": "Approved"
-        case "CHANGES_REQUESTED": "Changes requested"
-        case "COMMENTED": "Commented"
-        case "PENDING": "Pending"
-        default: state.capitalized
+        switch review.state {
+        case "APPROVED": return ("Approved by you", GRTheme.success)
+        case "CHANGES_REQUESTED": return ("Changes requested", GRTheme.warning)
+        case "COMMENTED": return ("Reviewed by you", GRTheme.accent)
+        default: return nil
         }
     }
 
     private func badge(
-        _ label: String,
-        icon: String,
-        color: Color
+        _ text: String,
+        color: Color,
+        filled: Bool = false
     ) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.caption2)
-            Text(label)
-                .font(.system(.caption2, weight: .semibold))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(color.opacity(0.15))
-        .clipShape(Capsule())
-    }
-
-    private func reviewColor(for state: String) -> Color {
-        switch state {
-        case "APPROVED": .green
-        case "CHANGES_REQUESTED": .orange
-        default: .secondary
-        }
+        Text(text)
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .tracking(0.5)
+            .foregroundStyle(filled ? GRTheme.onAccent : color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(filled ? color : GRTheme.segment(colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
