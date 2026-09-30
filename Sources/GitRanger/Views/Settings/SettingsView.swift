@@ -35,7 +35,12 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 720, height: 600)
+        .frame(
+            minWidth: 820,
+            idealWidth: 900,
+            minHeight: 680,
+            idealHeight: 760
+        )
         .background(GRTheme.background(colorScheme))
         .tint(GRTheme.accent)
         .task { await settingsVM.checkAvailability() }
