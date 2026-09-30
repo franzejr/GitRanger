@@ -106,7 +106,12 @@ struct CommitListView: View {
                     .labelsHidden()
                     .frame(maxWidth: 160)
                     .onChange(of: viewModel.selectedBranch) { oldBranch, newBranch in
-                        guard oldBranch != newBranch, !newBranch.isEmpty, let repo else { return }
+                        // Setting the initial branch follows an import and must not
+                        // trigger a second, much larger history scan.
+                        guard CommitListViewModel.shouldSwitchBranch(
+                            from: oldBranch, to: newBranch
+                        ),
+                              let repo else { return }
                         Task { await viewModel.switchBranch(newBranch, repo: repo) }
                     }
                 }

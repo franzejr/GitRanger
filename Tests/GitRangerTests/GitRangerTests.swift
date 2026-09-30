@@ -5,6 +5,83 @@ import XCTest
 
 final class GitServiceTests: XCTestCase {
 
+    func testCloneUsesSmallBloblessHistory() {
+        let destination = URL(fileURLWithPath: "/tmp/git-ranger-test")
+        let arguments = GitService.cloneArguments(
+            url: "https://example.com/repo.git",
+            destination: destination
+        )
+
+        XCTAssertEqual(arguments.first, "clone")
+        XCTAssertTrue(arguments.contains("--depth"))
+        XCTAssertTrue(arguments.contains("\(GitService.initialCloneDepth)"))
+        XCTAssertTrue(arguments.contains("--filter=blob:none"))
+        XCTAssertTrue(arguments.contains("--no-tags"))
+    }
+
+    func testDefaultBranchUsesLocalHead() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("git-ranger-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        _ = try await ShellService.shared.execute(
+            "git", arguments: ["init", "-b", "feature", directory.path]
+        )
+
+        let branch = try await GitService.shared.getDefaultBranch(repoPath: directory)
+        XCTAssertEqual(branch, "feature")
+    }
+
+    func testShallowCloneCanLoadOlderHistoryOnDemand() async throws {
+        let workspace = FileManager.default.temporaryDirectory
+            .appendingPathComponent("git-ranger-\(UUID().uuidString)")
+        let source = workspace.appendingPathComponent("source")
+        let origin = workspace.appendingPathComponent("origin.git")
+        let clone = workspace.appendingPathComponent("clone")
+        try FileManager.default.createDirectory(
+            at: workspace, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: workspace) }
+
+        let shell = ShellService.shared
+        _ = try await shell.execute(
+            "git", arguments: ["init", "-b", "main", source.path]
+        )
+        _ = try await shell.execute(
+            "git", arguments: ["config", "user.name", "GitRanger Tests"], cwd: source
+        )
+        _ = try await shell.execute(
+            "git", arguments: ["config", "user.email", "tests@gitranger.local"], cwd: source
+        )
+        for index in 1...35 {
+            _ = try await shell.execute(
+                "git",
+                arguments: ["commit", "--allow-empty", "-m", "Commit \(index)"],
+                cwd: source
+            )
+        }
+        _ = try await shell.execute(
+            "git", arguments: ["clone", "--bare", source.path, origin.path]
+        )
+        _ = try await shell.execute(
+            "git",
+            arguments: GitService.cloneArguments(
+                url: origin.absoluteString, destination: clone
+            )
+        )
+
+        let initialCount = try await shell.execute(
+            "git", arguments: ["rev-list", "--count", "HEAD"], cwd: clone
+        )
+        XCTAssertEqual(initialCount.trimmingCharacters(in: .whitespacesAndNewlines), "30")
+
+        try await GitService.shared.deepenHistory(repoPath: clone, by: 10)
+        let deepenedCount = try await shell.execute(
+            "git", arguments: ["rev-list", "--count", "HEAD"], cwd: clone
+        )
+        XCTAssertEqual(deepenedCount.trimmingCharacters(in: .whitespacesAndNewlines), "35")
+    }
+
     func testExtractRepoNameHTTPS() {
         let git = GitService.shared
         XCTAssertEqual(git.extractRepoName(url: "https://github.com/user/my-repo.git"), "my-repo")
@@ -26,9 +103,55 @@ final class GitServiceTests: XCTestCase {
     }
 }
 
+// MARK: - Commit List Tests
+
+final class CommitListViewModelTests: XCTestCase {
+
+    func testInitialBranchSelectionDoesNotReloadHistory() {
+        XCTAssertFalse(
+            CommitListViewModel.shouldSwitchBranch(from: "", to: "main")
+        )
+    }
+
+    func testUserBranchSelectionReloadsHistory() {
+        XCTAssertTrue(
+            CommitListViewModel.shouldSwitchBranch(from: "main", to: "feature")
+        )
+    }
+}
+
 // MARK: - AI Models Tests
 
 final class AIModelsTests: XCTestCase {
+
+    func testClaudeAuthenticationErrorExplainsHowToLogin() {
+        let result = ShellService.ShellResult(
+            stdout: """
+            {"type":"result","subtype":"error","is_error":true,"result":"Failed to authenticate: OAuth session expired and could not be refreshed"}
+            """,
+            stderr: "",
+            exitCode: 1
+        )
+
+        let message = ClaudeCodeService.errorMessage(from: result)
+        XCTAssertTrue(message.contains("not authenticated"))
+        XCTAssertTrue(message.contains("claude login"))
+    }
+
+    func testClaudeStructuredErrorIsPreserved() {
+        let result = ShellService.ShellResult(
+            stdout: """
+            {"type":"result","subtype":"error","is_error":true,"result":"Provider overloaded"}
+            """,
+            stderr: "",
+            exitCode: 1
+        )
+
+        XCTAssertEqual(
+            ClaudeCodeService.errorMessage(from: result),
+            "Provider overloaded"
+        )
+    }
 
     func testProviderDisplayNames() {
         XCTAssertEqual(AIProvider.claudeCode.displayName, "Claude Code (Local)")

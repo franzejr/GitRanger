@@ -71,9 +71,13 @@ final class RepoListViewModel {
         }
 
         try Task.checkCancellation()
-        importStatus = "Detecting default branch..."
+        importStatus = "Indexing repository..."
         importDetail = nil
-        let defaultBranch = try await gitService.getDefaultBranch(repoPath: localPath)
+        async let defaultBranchTask = gitService.getDefaultBranch(repoPath: localPath)
+        async let commitInfosTask = gitService.getLog(
+            repoPath: localPath, maxCount: GitService.initialCloneDepth
+        )
+        let (defaultBranch, commitInfos) = try await (defaultBranchTask, commitInfosTask)
 
         let repo = Repo(
             id: repoId,
@@ -85,11 +89,6 @@ final class RepoListViewModel {
         modelContext.insert(repo)
 
         try Task.checkCancellation()
-        importStatus = "Loading commits..."
-        let commitInfos = try await gitService.getLog(
-            repoPath: localPath, maxCount: 30
-        )
-
         importStatus = "Saving \(commitInfos.count) commits..."
         try insertCommits(commitInfos, repo: repo, modelContext: modelContext)
         try modelContext.save()
@@ -110,10 +109,15 @@ final class RepoListViewModel {
         }
 
         do {
-            importStatus = "Detecting default branch..."
-            let defaultBranch = try await gitService.getDefaultBranch(repoPath: path)
-
-            let remoteURL = await gitService.getRemoteURL(repoPath: path)
+            importStatus = "Indexing repository..."
+            async let defaultBranchTask = gitService.getDefaultBranch(repoPath: path)
+            async let commitInfosTask = gitService.getLog(
+                repoPath: path, maxCount: GitService.initialCloneDepth
+            )
+            async let remoteURLTask = gitService.getRemoteURL(repoPath: path)
+            let (defaultBranch, commitInfos, remoteURL) = try await (
+                defaultBranchTask, commitInfosTask, remoteURLTask
+            )
             let name = path.lastPathComponent
             let url = remoteURL ?? path.path
 
@@ -125,11 +129,6 @@ final class RepoListViewModel {
                 defaultBranch: defaultBranch
             )
             modelContext.insert(repo)
-
-            importStatus = "Loading commits..."
-            let commitInfos = try await gitService.getLog(
-                repoPath: path, maxCount: 30
-            )
 
             importStatus = "Saving \(commitInfos.count) commits..."
             try insertCommits(commitInfos, repo: repo, modelContext: modelContext)

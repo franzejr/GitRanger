@@ -130,14 +130,37 @@ final class ClaudeCodeService: AIServiceProtocol {
                 "Request timed out. Try selecting fewer commits."
             )
         }
+        return .providerError(Self.errorMessage(from: result))
+    }
+
+    /// Claude writes structured provider failures to stdout, even when the
+    /// process exits with a non-zero status. Surface that detail instead of
+    /// replacing it with a generic exit-code message.
+    static func errorMessage(
+        from result: ShellService.ShellResult
+    ) -> String {
+        let stdout = result.stdout.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
         let stderr = result.stderr.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        return .providerError(
-            stderr.isEmpty
-                ? "Claude Code exited with code \(result.exitCode)"
-                : stderr
-        )
+
+        let structuredDetail: String? = stdout.data(using: .utf8)
+            .flatMap { try? JSONDecoder().decode(ClaudeCodeResponse.self, from: $0) }
+            .map(\.result)
+        let detail = structuredDetail ?? (stderr.isEmpty ? stdout : stderr)
+        let lowered = detail.lowercased()
+
+        if lowered.contains("authenticate")
+            || lowered.contains("oauth session expired")
+            || lowered.contains("not logged in") {
+            return "Claude Code is not authenticated. Open Terminal, run `claude login`, then retry."
+        }
+
+        return detail.isEmpty
+            ? "Claude Code exited with code \(result.exitCode)"
+            : detail
     }
 
     private func parseClaudeOutput(

@@ -2,6 +2,7 @@ import Foundation
 
 final class GitService {
     static let shared = GitService()
+    static let initialCloneDepth = 30
 
     private let shell = ShellService.shared
 
@@ -37,7 +38,7 @@ final class GitService {
 
         let result = try await shell.run(
             "git",
-            arguments: ["clone", "--depth", "100", "--progress", url, localPath.path],
+            arguments: Self.cloneArguments(url: url, destination: localPath),
             timeout: 300
         ) { text in
             // Git progress uses \r for in-place updates (e.g. "Receiving objects:  45%")
@@ -54,23 +55,46 @@ final class GitService {
         return localPath
     }
 
+    static func cloneArguments(url: String, destination: URL) -> [String] {
+        [
+            "clone",
+            "--depth", "\(initialCloneDepth)",
+            "--filter=blob:none",
+            "--no-tags",
+            "--progress",
+            url,
+            destination.path
+        ]
+    }
+
     // MARK: - Default Branch
 
     func getDefaultBranch(repoPath: URL) async throws -> String {
-        // Try remote show origin
+        // Use local refs only. `git remote show origin` contacts the network and
+        // added several seconds to every import even after cloning had finished.
         if let output = try? await shell.execute(
-            "git", arguments: ["remote", "show", "origin"],
-            cwd: repoPath, timeout: 15
+            "git",
+            arguments: ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+            cwd: repoPath, timeout: 2
         ) {
-            let lines = output.components(separatedBy: "\n")
-            for line in lines where line.contains("HEAD branch:") {
-                let branch = line.components(separatedBy: "HEAD branch:").last?
-                    .trimmingCharacters(in: .whitespaces) ?? ""
-                if !branch.isEmpty { return branch }
+            let branch = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "origin/", with: "")
+            if !branch.isEmpty {
+                return branch
             }
         }
 
-        // Fallback: check local branches
+        if let output = try? await shell.execute(
+            "git", arguments: ["symbolic-ref", "--quiet", "--short", "HEAD"],
+            cwd: repoPath, timeout: 2
+        ) {
+            let branch = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !branch.isEmpty {
+                return branch
+            }
+        }
+
+        // Detached HEAD fallback: inspect local branches without network access.
         let branches = try await shell.execute(
             "git", arguments: ["branch", "--list"],
             cwd: repoPath
@@ -169,16 +193,8 @@ final class GitService {
             "git", arguments: ["rev-parse", "HEAD"], cwd: repoPath
         ).trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Fetch all branches + try to unshallow if needed
-        _ = try? await shell.execute(
-            "git", arguments: ["fetch", "--all", "--unshallow"], cwd: repoPath, timeout: 120
-        )
-        _ = try? await shell.execute(
-            "git", arguments: ["fetch", "--all"], cwd: repoPath, timeout: 120
-        )
-
         _ = try await shell.execute(
-            "git", arguments: ["pull"], cwd: repoPath, timeout: 120
+            "git", arguments: ["pull", "--ff-only"], cwd: repoPath, timeout: 120
         )
 
         let afterHead = try await shell.execute(
@@ -193,6 +209,24 @@ final class GitService {
             cwd: repoPath
         )
         return Int(countOutput.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    }
+
+    /// Fetch more history only when the user explicitly asks for older commits.
+    /// Normal imports and background syncs remain shallow and fast.
+    func deepenHistory(repoPath: URL, by commitCount: Int) async throws {
+        let shallow = try await shell.execute(
+            "git", arguments: ["rev-parse", "--is-shallow-repository"],
+            cwd: repoPath, timeout: 5
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard shallow == "true" else { return }
+
+        _ = try await shell.execute(
+            "git",
+            arguments: ["fetch", "--deepen=\(commitCount)", "--no-tags", "origin"],
+            cwd: repoPath,
+            timeout: 120
+        )
     }
 
     // MARK: - Working Tree

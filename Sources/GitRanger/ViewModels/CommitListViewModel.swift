@@ -25,6 +25,10 @@ final class CommitListViewModel {
     private var modelContext: ModelContext?
     private let gitService = GitService.shared
 
+    static func shouldSwitchBranch(from oldBranch: String, to newBranch: String) -> Bool {
+        !oldBranch.isEmpty && oldBranch != newBranch && !newBranch.isEmpty
+    }
+
     func setModelContext(_ context: ModelContext) {
         modelContext = context
     }
@@ -108,12 +112,25 @@ final class CommitListViewModel {
 
         do {
             let branch = selectedBranch.isEmpty ? nil : selectedBranch
-            let commitInfos = try await gitService.getLog(
+            var commitInfos = try await gitService.getLog(
                 repoPath: URL(fileURLWithPath: repo.localPath),
                 branch: branch,
                 maxCount: 50,
                 skip: total
             )
+
+            if commitInfos.isEmpty {
+                try await gitService.deepenHistory(
+                    repoPath: URL(fileURLWithPath: repo.localPath),
+                    by: 50
+                )
+                commitInfos = try await gitService.getLog(
+                    repoPath: URL(fileURLWithPath: repo.localPath),
+                    branch: branch,
+                    maxCount: 50,
+                    skip: total
+                )
+            }
 
             guard !commitInfos.isEmpty else {
                 isLoadingMore = false
@@ -186,7 +203,7 @@ final class CommitListViewModel {
             let commitInfos = try await gitService.getLog(
                 repoPath: repoPath,
                 branch: branch,
-                maxCount: 500
+                maxCount: 50
             )
 
             // Delete existing commits for this repo
