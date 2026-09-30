@@ -137,7 +137,7 @@ jobs:
             "GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           name: GitNarrate ${{ steps.version.outputs.VERSION }} (build ${{ steps.version.outputs.BUILD }})
