@@ -12,12 +12,12 @@ final class DesignRenderingTests: XCTestCase {
 
         try render(
             SettingsView().preferredColorScheme(.dark),
-            size: CGSize(width: 720, height: 600),
+            size: CGSize(width: 900, height: 760),
             name: "gitranger-settings-dark"
         )
         try render(
             SettingsView().preferredColorScheme(.light),
-            size: CGSize(width: 720, height: 600),
+            size: CGSize(width: 900, height: 760),
             name: "gitranger-settings-light"
         )
 

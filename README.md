@@ -4,6 +4,8 @@
 
 A native macOS app that turns commits, diffs, and pull requests into plain-English narratives. Stop scrolling through cryptic commit messages — GitRanger summarizes changes, reviews PRs with parallel AI agents, and monitors your projects in real time.
 
+![GitRanger pull request review with parallel AI agents](assets/gitranger-pull-requests.png)
+
 ---
 
 ## Why GitRanger?
@@ -11,7 +13,7 @@ A native macOS app that turns commits, diffs, and pull requests into plain-Engli
 - **Onboard faster** — Import any repo and instantly understand what happened, when, and why.
 - **Review PRs with AI** — Get thorough, multi-perspective code reviews without leaving your desktop.
 - **Stay in the loop** — Background polling and native notifications let you know the moment new commits land.
-- **Your AI, your choice** — Bring Claude Code, Anthropic API, OpenAI, or run fully local with Ollama.
+- **Your AI, your choice** — Use Claude Code, Codex CLI, Anthropic API, OpenAI, or fully local Ollama.
 
 ---
 
@@ -69,11 +71,12 @@ GitRanger is provider-agnostic. Pick the one that fits your workflow:
 | Provider | Key Required | Local | Repo Context |
 |----------|:---:|:---:|:---:|
 | **Claude Code** (recommended) | No | No | Yes |
+| **Codex CLI** | No | No | Yes (read-only) |
 | **Anthropic API** | Yes | No | No |
 | **OpenAI** | Yes | No | No |
 | **Ollama** | No | Yes | No |
 
-Claude Code is recommended — zero API key setup, uses your existing Claude subscription, and can read your repo for richer context.
+Claude Code and Codex CLI can reuse your existing CLI login and inspect the repository for richer context without a separate API key.
 
 ---
 
@@ -83,7 +86,7 @@ Claude Code is recommended — zero API key setup, uses your existing Claude sub
 - macOS 14 (Sonoma) or later
 - Xcode 15+ or Swift 5.9+ toolchain
 - Git installed
-- Claude Code CLI (recommended) or API keys for other providers
+- Claude Code CLI, Codex CLI, or API keys for cloud providers
 - GitHub CLI for PR reviews (optional): `brew install gh && gh auth login`
 
 ```bash
@@ -105,6 +108,19 @@ swift build -c release
 npm install -g @anthropic-ai/claude-code
 claude login
 ```
+
+### Setting Up Codex CLI
+
+GitRanger reuses your existing Codex login and runs reviews through `codex exec`
+with an ephemeral session and a read-only sandbox.
+
+```bash
+npm install -g @openai/codex
+codex login
+```
+
+Select **Codex CLI** under **Settings > AI Provider**. Leave the model field
+empty to use the CLI default, or enter any model available to your Codex account.
 
 ### Setting Up Ollama (Fully Local, No Internet)
 

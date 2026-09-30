@@ -115,9 +115,15 @@ extension PRReviewView {
                 .lineLimit(3)
                 .frame(minHeight: 30, alignment: .topLeading)
 
-            Text(agentVerdictLabel(agent, disabled: isDisabled))
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(agentVerdictColor(agent, disabled: isDisabled))
+            HStack(spacing: 6) {
+                Text(agentVerdictLabel(agent, disabled: isDisabled))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(agentVerdictColor(agent, disabled: isDisabled))
+                Spacer(minLength: 0)
+                if !isDisabled {
+                    agentRunButton(agent)
+                }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
@@ -148,18 +154,22 @@ extension PRReviewView {
                 .lineLimit(1)
             Spacer(minLength: 0)
             if !disabled {
-                Button {
-                    guard let repo else { return }
-                    Task { await viewModel.regenerateSingleAgent(agent, repo: repo) }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 8, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .help("Re-run \(agent.displayName)")
                 agentStatusDot(agent)
             }
         }
+    }
+
+    private func agentRunButton(_ agent: ReviewAgent) -> some View {
+        let hasReview = viewModel.agentReviews[agent] != nil
+        return Button(hasReview ? "Re-run" : "Run") {
+            guard let repo else { return }
+            Task { await viewModel.regenerateSingleAgent(agent, repo: repo) }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 9, weight: .medium))
+        .foregroundStyle(GRTheme.link(colorScheme))
+        .disabled(viewModel.agentLoading.contains(agent))
+        .help("\(hasReview ? "Re-run" : "Run") \(agent.displayName)")
     }
 
     @ViewBuilder

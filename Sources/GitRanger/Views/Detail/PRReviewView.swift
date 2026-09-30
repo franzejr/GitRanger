@@ -225,18 +225,13 @@ struct PRReviewView: View {
             VStack(spacing: 4) {
                 Text("AI Code Review")
                     .font(.system(size: 15, weight: .semibold))
-                Text("Run \(totalEnabled) specialized reviewers in parallel.")
+                Text("Run all \(totalEnabled) reviewers in parallel, or choose one below.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
             }
             FlowLayout(spacing: 6) {
                 ForEach(ReviewAgent.allCases) { agent in
-                    agentChip(
-                        icon: agent.icon,
-                        name: agent.displayName,
-                        color: agent.iconColor,
-                        isDisabled: disabledAgentSet.contains(agent.rawValue)
-                    )
+                    agentLaunchButton(agent)
                 }
             }
             Button("Run all agents") {
@@ -252,22 +247,25 @@ struct PRReviewView: View {
         .grCard()
     }
 
-    private func agentChip(
-        icon: String,
-        name: String,
-        color: Color,
-        isDisabled: Bool
-    ) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon).font(.caption2)
-            Text(name).font(.system(size: 10.5))
+    private func agentLaunchButton(_ agent: ReviewAgent) -> some View {
+        let isDisabled = disabledAgentSet.contains(agent.rawValue)
+        return Button {
+            guard let repo else { return }
+            Task { await viewModel.regenerateSingleAgent(agent, repo: repo) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: agent.icon).font(.caption2)
+                Text("Run \(agent.displayName)").font(.system(size: 10.5))
+            }
         }
-        .foregroundStyle(isDisabled ? .secondary : color)
+        .buttonStyle(.plain)
+        .foregroundStyle(isDisabled ? .secondary : agent.iconColor)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(GRTheme.segment(colorScheme))
         .clipShape(Capsule())
         .opacity(isDisabled ? 0.5 : 1)
+        .disabled(isDisabled || viewModel.diff == nil)
     }
 
     @ViewBuilder

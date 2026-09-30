@@ -5,6 +5,7 @@ import SwiftUI
 
 enum AIProvider: String, CaseIterable, Codable {
     case claudeCode = "claude_code"
+    case codexCLI = "codex_cli"
     case anthropicAPI = "anthropic_api"
     case openAI = "openai"
     case ollama = "ollama"
@@ -12,6 +13,7 @@ enum AIProvider: String, CaseIterable, Codable {
     var displayName: String {
         switch self {
         case .claudeCode: "Claude Code (Local)"
+        case .codexCLI: "Codex CLI (Local)"
         case .anthropicAPI: "Anthropic API"
         case .openAI: "OpenAI API"
         case .ollama: "Ollama (Local)"
@@ -20,7 +22,7 @@ enum AIProvider: String, CaseIterable, Codable {
 
     var requiresAPIKey: Bool {
         switch self {
-        case .claudeCode, .ollama: false
+        case .claudeCode, .codexCLI, .ollama: false
         case .anthropicAPI, .openAI: true
         }
     }
@@ -29,6 +31,8 @@ enum AIProvider: String, CaseIterable, Codable {
         switch self {
         case .claudeCode:
             "Uses your local Claude Code installation. No API key needed — uses your existing Claude subscription."
+        case .codexCLI:
+            "Uses your local Codex CLI login in read-only mode. No separate API key needed."
         case .anthropicAPI:
             "Direct API calls to Anthropic's Claude. Requires an API key from console.anthropic.com."
         case .openAI:

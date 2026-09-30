@@ -5,6 +5,8 @@ struct AIProviderSettingsView: View {
     @AppStorage("aiProvider") private var aiProvider = AIProvider.claudeCode.rawValue
     @AppStorage("claudeModel") private var claudeModel = "haiku"
     @AppStorage("claudeRepoContext") private var claudeRepoContext = true
+    @AppStorage("codexModel") private var codexModel = ""
+    @AppStorage("codexRepoContext") private var codexRepoContext = true
     @AppStorage("anthropicAPIKey") private var anthropicAPIKey = ""
     @AppStorage("anthropicModel") private var anthropicModel = "claude-sonnet-4-5-20250514"
     @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
@@ -69,6 +71,7 @@ struct AIProviderSettingsView: View {
 
             switch selectedProvider {
             case .claudeCode: claudeConfiguration
+            case .codexCLI: codexConfiguration
             case .anthropicAPI: anthropicConfiguration
             case .openAI: openAIConfiguration
             case .ollama: ollamaConfiguration
@@ -142,6 +145,30 @@ struct AIProviderSettingsView: View {
                     Text("Claude Haiku 4.5").tag("claude-haiku-4-5-20251001")
                     Text("Claude Opus 4.5").tag("claude-opus-4-5-20250918")
                 }.labelsHidden()
+            }
+        }
+    }
+
+    private var codexConfiguration: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsRow("Model") {
+                TextField("Use Codex CLI default", text: $codexModel)
+                    .font(.system(size: 11, design: .monospaced))
+            }
+            SettingsRow("Repo context") {
+                HStack(spacing: 8) {
+                    Toggle("", isOn: $codexRepoContext)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                    Text("Let Codex inspect the working tree in read-only mode")
+                        .font(.system(size: 11))
+                        .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
+                }
+            }
+            SettingsRow("Execution") {
+                Text("Ephemeral session · read-only sandbox · no approval prompts")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
             }
         }
     }
@@ -275,6 +302,7 @@ private extension AIProvider {
     var cardDisplayName: String {
         switch self {
         case .claudeCode: "Claude Code"
+        case .codexCLI: "Codex CLI"
         case .anthropicAPI: "Anthropic API"
         case .openAI: "OpenAI"
         case .ollama: "Ollama"
@@ -285,6 +313,8 @@ private extension AIProvider {
         switch self {
         case .claudeCode:
             "Uses your existing Claude subscription. No API key. Can read the repo for richer context."
+        case .codexCLI:
+            "Uses your existing Codex login. Runs non-interactively with a read-only sandbox."
         case .anthropicAPI:
             "Direct API access with your own key."
         case .openAI:
@@ -297,6 +327,7 @@ private extension AIProvider {
     var tags: [String] {
         switch self {
         case .claudeCode: ["no key", "repo context"]
+        case .codexCLI: ["no key", "read only"]
         case .anthropicAPI, .openAI: ["api key"]
         case .ollama: ["no key", "local"]
         }

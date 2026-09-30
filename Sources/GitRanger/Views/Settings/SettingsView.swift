@@ -12,6 +12,7 @@ struct SettingsView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("claudePath") private var claudePath = ""
+    @AppStorage("codexPath") private var codexPath = ""
     @AppStorage("ghPath") private var ghPath = ""
     @AppStorage("glabPath") private var glabPath = ""
     @AppStorage("gitlabHost") private var gitlabHost = ""
@@ -144,6 +145,13 @@ struct SettingsView: View {
                         value: $claudePath,
                         placeholder: "Auto-detect claude",
                         message: "Select claude"
+                    )
+                }
+                settingsRow("Codex CLI") {
+                    pathField(
+                        value: $codexPath,
+                        placeholder: "Auto-detect codex",
+                        message: "Select codex"
                     )
                 }
                 settingsRow("GitHub CLI") {

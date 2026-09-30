@@ -6,6 +6,8 @@ final class AIServiceFactory {
         switch provider {
         case .claudeCode:
             ClaudeCodeService()
+        case .codexCLI:
+            CodexCLIService()
         case .anthropicAPI:
             AnthropicAPIService(
                 apiKey: settings.anthropicAPIKey,
@@ -28,6 +30,11 @@ final class AIServiceFactory {
         let claudeCode = ClaudeCodeService()
         if await claudeCode.isAvailable() {
             return .claudeCode
+        }
+
+        let codexCLI = CodexCLIService()
+        if await codexCLI.isAvailable() {
+            return .codexCLI
         }
 
         if !settings.anthropicAPIKey.isEmpty {

@@ -159,8 +159,34 @@ final class AIModelsTests: XCTestCase {
         )
     }
 
+    func testCodexAuthenticationErrorExplainsHowToLogin() {
+        let result = ShellService.ShellResult(
+            stdout: "",
+            stderr: "Not logged in. Please run codex login.",
+            exitCode: 1
+        )
+
+        let message = CodexCLIService.errorMessage(from: result)
+        XCTAssertTrue(message.contains("not authenticated"))
+        XCTAssertTrue(message.contains("codex login"))
+    }
+
+    func testCodexErrorIsPreserved() {
+        let result = ShellService.ShellResult(
+            stdout: "",
+            stderr: "Model is not available",
+            exitCode: 1
+        )
+
+        XCTAssertEqual(
+            CodexCLIService.errorMessage(from: result),
+            "Model is not available"
+        )
+    }
+
     func testProviderDisplayNames() {
         XCTAssertEqual(AIProvider.claudeCode.displayName, "Claude Code (Local)")
+        XCTAssertEqual(AIProvider.codexCLI.displayName, "Codex CLI (Local)")
         XCTAssertEqual(AIProvider.anthropicAPI.displayName, "Anthropic API")
         XCTAssertEqual(AIProvider.openAI.displayName, "OpenAI API")
         XCTAssertEqual(AIProvider.ollama.displayName, "Ollama (Local)")
@@ -168,6 +194,7 @@ final class AIModelsTests: XCTestCase {
 
     func testProviderRequiresAPIKey() {
         XCTAssertFalse(AIProvider.claudeCode.requiresAPIKey)
+        XCTAssertFalse(AIProvider.codexCLI.requiresAPIKey)
         XCTAssertTrue(AIProvider.anthropicAPI.requiresAPIKey)
         XCTAssertTrue(AIProvider.openAI.requiresAPIKey)
         XCTAssertFalse(AIProvider.ollama.requiresAPIKey)
@@ -318,6 +345,13 @@ final class AIServiceFactoryTests: XCTestCase {
         let service = AIServiceFactory.create(provider: .anthropicAPI, settings: settings)
         XCTAssertEqual(service.displayName, "Anthropic API")
         XCTAssertTrue(service.requiresAPIKey)
+    }
+
+    func testCreateCodexCLI() {
+        let settings = AISettings()
+        let service = AIServiceFactory.create(provider: .codexCLI, settings: settings)
+        XCTAssertEqual(service.displayName, "Codex CLI (Local)")
+        XCTAssertFalse(service.requiresAPIKey)
     }
 
     func testCreateOpenAI() {

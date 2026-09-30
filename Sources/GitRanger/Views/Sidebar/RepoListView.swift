@@ -168,6 +168,7 @@ struct RepoListView: View {
     private var providerName: String {
         switch AIProvider(rawValue: aiProvider) ?? .claudeCode {
         case .claudeCode: "Claude Code"
+        case .codexCLI: "Codex CLI"
         case .anthropicAPI: "Anthropic"
         case .openAI: "OpenAI"
         case .ollama: "Ollama"
