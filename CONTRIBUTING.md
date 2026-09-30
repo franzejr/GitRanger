@@ -1,6 +1,6 @@
-# Contributing to GitNarrate
+# Contributing to GitRanger
 
-Thank you for your interest in contributing to GitNarrate! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to GitRanger! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
 
@@ -20,26 +20,8 @@ Requirements:
 - Swift 5.9+
 
 ```bash
-cd macos
-open GitNarrate.xcodeproj
-```
-
-### Web App Development
-
-Requirements:
-- Node.js 18+
-- npm or pnpm
-
-```bash
-# Backend
-cd web/server
-npm install
-npm run dev
-
-# Frontend (separate terminal)
-cd web/client
-npm install
-npm run dev
+swift build
+swift test
 ```
 
 ## Development Guidelines
@@ -82,11 +64,6 @@ test: add tests for commit parser
 - Use SwiftLint for linting
 - Write descriptive names, avoid abbreviations
 
-**TypeScript (Web):**
-- ESLint + Prettier for formatting
-- Strict TypeScript mode
-- Use interfaces for all service contracts
-
 ### Testing
 
 - Write tests for new features
@@ -95,16 +72,7 @@ test: add tests for commit parser
 
 **macOS:**
 ```bash
-# Run tests in Xcode: Cmd+U
-```
-
-**Web:**
-```bash
-# Backend tests
-cd web/server && npm test
-
-# Frontend tests
-cd web/client && npm test
+swift test
 ```
 
 ## Pull Request Process

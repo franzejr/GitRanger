@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "GitNarrate",
+    name: "GitRanger",
     platforms: [
         .macOS(.v14)
     ],
     targets: [
         .executableTarget(
-            name: "GitNarrate",
-            path: "Sources/GitNarrate",
+            name: "GitRanger",
+            path: "Sources/GitRanger",
             resources: [
                 .copy("Resources/AppIcon.icns"),
                 .copy("Resources/MenuBarIcon.png"),
@@ -18,9 +18,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "GitNarrateTests",
-            dependencies: ["GitNarrate"],
-            path: "Tests/GitNarrateTests"
+            name: "GitRangerTests",
+            dependencies: ["GitRanger"],
+            path: "Tests/GitRangerTests"
         )
     ]
 )

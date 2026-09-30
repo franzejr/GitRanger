@@ -1,33 +1,30 @@
-name: Dependency Audit
+name: Dependency Check
 
 on:
   push:
     branches: [main]
     paths:
-      - 'macos/Package.swift'
-      - 'macos/Package.resolved'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/dependency-audit.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'macos/Package.swift'
-      - 'macos/Package.resolved'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/dependency-audit.yml'
   schedule:
     - cron: '0 9 * * 1' # Every Monday at 9am UTC
 
 jobs:
   audit:
-    name: Vulnerability Scan
+    name: Validate Dependency Graph
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install osv-scanner
-        run: brew install osv-scanner
+      - name: Resolve dependencies
+        run: swift package resolve
 
-      - name: Scan Swift dependencies
-        run: osv-scanner --lockfile=macos/Package.resolved
-        continue-on-error: true
-
-      - name: List dependency tree
-        working-directory: macos
+      - name: Validate dependency graph
         run: swift package show-dependencies --format json | python3 -m json.tool

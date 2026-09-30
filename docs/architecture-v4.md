@@ -1,4 +1,4 @@
-# GitNarrate — Architecture Document v4
+# GitRanger — Architecture Document v4
 
 ## Vision
 An open-source tool to narrate the full history of any git project with AI-powered summaries and real-time monitoring.
@@ -15,11 +15,11 @@ An open-source tool to narrate the full history of any git project with AI-power
 
 ## AI Engine Architecture
 
-The core innovation: GitNarrate treats the AI layer as a **pluggable protocol**. The user picks how they want commit analysis to run.
+The core innovation: GitRanger treats the AI layer as a **pluggable protocol**. The user picks how they want commit analysis to run.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     GitNarrate AI Engine                      │
+│                     GitRanger AI Engine                      │
 │                                                              │
 │   User selects one:                                          │
 │                                                              │
@@ -72,7 +72,7 @@ The core innovation: GitNarrate treats the AI layer as a **pluggable protocol**.
 
 ### The Core Command
 
-For each commit, GitNarrate runs:
+For each commit, GitRanger runs:
 
 ```bash
 # Step 1: Get the diff
@@ -114,7 +114,7 @@ Claude Code with `--output-format json` returns:
 }
 ```
 
-GitNarrate extracts `.result`, parses the inner JSON, and saves it.
+GitRanger extracts `.result`, parses the inner JSON, and saves it.
 
 ### Advanced: Using Claude Code's Repo Awareness
 
@@ -638,7 +638,7 @@ struct SettingsView: View {
                 // Claude Code section
                 if aiProvider == .claudeCode {
                     Section("Claude Code") {
-                        Text("GitNarrate will use your local Claude Code installation.")
+                        Text("GitRanger will use your local Claude Code installation.")
                             .foregroundStyle(.secondary)
                         Text("Make sure Claude Code is installed and authenticated:")
                             .foregroundStyle(.secondary)
@@ -901,7 +901,7 @@ export async function autoDetectProvider(config: Record<string, string>): Promis
 
 ## Cost Tracking
 
-Since Claude Code reports `cost_usd` in its JSON output, GitNarrate can track AI costs:
+Since Claude Code reports `cost_usd` in its JSON output, GitRanger can track AI costs:
 
 ```swift
 @Model
@@ -929,7 +929,7 @@ Average per commit: $0.003
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                                                          │
-│                    Welcome to GitNarrate                  │
+│                    Welcome to GitRanger                  │
 │                                                          │
 │   Let's set up your AI engine for commit analysis.       │
 │                                                          │
@@ -968,10 +968,10 @@ Average per commit: $0.003
 ## Monorepo Structure
 
 ```
-gitnarrate/
+gitranger/
 ├── macos/                          # Native macOS app
-│   ├── GitNarrate.xcodeproj
-│   ├── GitNarrate/
+│   ├── GitRanger.xcodeproj
+│   ├── GitRanger/
 │   │   ├── App/
 │   │   ├── Models/
 │   │   ├── ViewModels/
@@ -988,7 +988,7 @@ gitnarrate/
 │   │   │   ├── PollService.swift
 │   │   │   └── KeychainService.swift
 │   │   └── Utilities/
-│   └── GitNarrateTests/
+│   └── GitRangerTests/
 │
 ├── web/                            # React + Node.js web app
 │   ├── client/

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install git hooks for the GitNarrate repository
+# Install git hooks for the GitRanger repository
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

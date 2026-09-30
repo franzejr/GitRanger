@@ -2,7 +2,6 @@ name: Release
 
 on:
   push:
-    branches: [main]
     tags:
       - 'v*'
 
@@ -22,22 +21,8 @@ jobs:
         id: version
         run: |
           BUILD=$(git rev-list --count HEAD)
-
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Tagged release: v1.0.0 → version=1.0.0, tag=v1.0.0
-            VERSION="${GITHUB_REF#refs/tags/v}"
-            TAG="${GITHUB_REF#refs/tags/}"
-          else
-            # Auto-release from main: find latest v* tag as base version
-            BASE_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "")
-            if [ -n "$BASE_TAG" ]; then
-              BASE_VERSION="${BASE_TAG#v}"
-            else
-              BASE_VERSION="0.1.0"
-            fi
-            VERSION="${BASE_VERSION}"
-            TAG="v${BASE_VERSION}+${BUILD}"
-          fi
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG="${GITHUB_REF#refs/tags/}"
 
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
@@ -49,8 +34,11 @@ jobs:
         run: |
           CURRENT_TAG="${{ steps.version.outputs.TAG }}"
 
-          # Find the previous release tag, excluding current and build tags
-          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v[0-9]' | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
+          # Ignore legacy auto-release tags containing build metadata.
+          PREV_TAG=$(git tag --sort=-version:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v "^${CURRENT_TAG}$" \
+            | head -1 || true)
 
           if [ -z "$PREV_TAG" ]; then
             RANGE="HEAD"
@@ -69,8 +57,8 @@ jobs:
             echo ""
             echo "### Installation"
             echo ""
-            echo "1. Download \`GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip\` below"
-            echo "2. Unzip and move \`GitNarrate.app\` to your Applications folder"
+            echo "1. Download \`GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip\` below"
+            echo "2. Unzip and move \`GitRanger.app\` to your Applications folder"
             echo "3. On first launch, **right-click** the app and choose **Open** (macOS blocks unsigned apps on double-click)"
             echo "4. Click **Open** in the confirmation dialog"
             echo "CHANGELOG_EOF"
@@ -81,32 +69,32 @@ jobs:
 
       - name: Create app bundle
         run: |
-          APP_DIR="GitNarrate.app/Contents/MacOS"
+          APP_DIR="GitRanger.app/Contents/MacOS"
           mkdir -p "$APP_DIR"
-          cp .build/release/GitNarrate "$APP_DIR/GitNarrate"
+          cp .build/release/GitRanger "$APP_DIR/GitRanger"
 
           # Copy bundled resources
-          RESOURCES_DIR="GitNarrate.app/Contents/Resources"
+          RESOURCES_DIR="GitRanger.app/Contents/Resources"
           mkdir -p "$RESOURCES_DIR"
-          BUNDLE_PATH=$(find .build/release -name "GitNarrate_GitNarrate.bundle" -type d | head -1)
-          if [ -n "$BUNDLE_PATH" ]; then
+          BUNDLE_PATH=".build/release/GitRanger_GitRanger.bundle"
+          if [ -d "$BUNDLE_PATH" ]; then
             echo "Found resource bundle at: $BUNDLE_PATH"
             cp -R "$BUNDLE_PATH" "$RESOURCES_DIR/"
           else
             echo "WARNING: Resource bundle not found"
           fi
 
-          cat > "GitNarrate.app/Contents/Info.plist" << PLIST
+          cat > "GitRanger.app/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>CFBundleExecutable</key>
-            <string>GitNarrate</string>
+            <string>GitRanger</string>
             <key>CFBundleIdentifier</key>
             <string>com.gitnarrate.app</string>
             <key>CFBundleName</key>
-            <string>GitNarrate</string>
+            <string>GitRanger</string>
             <key>CFBundleVersion</key>
             <string>${{ steps.version.outputs.BUILD }}</string>
             <key>CFBundleShortVersionString</key>
@@ -124,30 +112,30 @@ jobs:
           PLIST
 
           # Copy app icon into bundle Resources
-          if [ -f Sources/GitNarrate/Resources/AppIcon.icns ]; then
-            cp Sources/GitNarrate/Resources/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
+          if [ -f Sources/GitRanger/Resources/AppIcon.icns ]; then
+            cp Sources/GitRanger/Resources/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
           fi
 
       - name: Ad-hoc code sign
-        run: codesign --sign "-" --force --deep GitNarrate.app
+        run: codesign --sign "-" --force --deep GitRanger.app
 
       - name: Create ZIP archive
         run: |
-          ditto -c -k --keepParent GitNarrate.app \
-            "GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip"
+          ditto -c -k --keepParent GitRanger.app \
+            "GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
-          name: GitNarrate ${{ steps.version.outputs.VERSION }} (build ${{ steps.version.outputs.BUILD }})
+          name: GitRanger ${{ steps.version.outputs.VERSION }} (build ${{ steps.version.outputs.BUILD }})
           body: ${{ steps.changelog.outputs.CHANGELOG }}
-          files: GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
+          files: GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: GitNarrate-${{ steps.version.outputs.VERSION }}-build${{ steps.version.outputs.BUILD }}-macos
-          path: GitNarrate-${{ steps.version.outputs.VERSION }}-macos.zip
+          name: GitRanger-${{ steps.version.outputs.VERSION }}-build${{ steps.version.outputs.BUILD }}-macos
+          path: GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip

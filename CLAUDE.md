@@ -1,14 +1,14 @@
-# GitNarrate
+# GitRanger
 
 ## Project Overview
-GitNarrate is an open-source native macOS app that narrates the full history of any git project with AI-powered summaries and real-time monitoring.
+GitRanger is an open-source native macOS app that narrates the full history of any git project with AI-powered summaries and real-time monitoring.
 
 ## Project Structure
 ```
-gitnarrate/
+gitranger/
 ├── Package.swift       # Swift Package Manager manifest
 ├── Sources/            # SwiftUI macOS app source
-│   └── GitNarrate/
+│   └── GitRanger/
 │       ├── App/        # App entry point
 │       ├── Models/     # SwiftData models + AI types
 │       ├── Services/   # Git, GitHub, AI, Shell services

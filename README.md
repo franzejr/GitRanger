@@ -1,12 +1,12 @@
-# GitNarrate
+# GitRanger
 
 **AI-powered git history narration and code review.**
 
-A native macOS app that turns commits, diffs, and pull requests into plain-English narratives. Stop scrolling through cryptic commit messages — GitNarrate summarizes changes, reviews PRs with parallel AI agents, and monitors your projects in real time.
+A native macOS app that turns commits, diffs, and pull requests into plain-English narratives. Stop scrolling through cryptic commit messages — GitRanger summarizes changes, reviews PRs with parallel AI agents, and monitors your projects in real time.
 
 ---
 
-## Why GitNarrate?
+## Why GitRanger?
 
 - **Onboard faster** — Import any repo and instantly understand what happened, when, and why.
 - **Review PRs with AI** — Get thorough, multi-perspective code reviews without leaving your desktop.
@@ -27,7 +27,7 @@ Fetch open, closed, merged, or pending-review PRs directly from GitHub. Run a si
 
 ### Parallel Sub-Agent Reviews
 
-This is where GitNarrate really shines. Instead of a single reviewer, launch **five specialized AI agents in parallel** — each one focused on a different dimension of code quality:
+This is where GitRanger really shines. Instead of a single reviewer, launch **five specialized AI agents in parallel** — each one focused on a different dimension of code quality:
 
 | Agent | Focus |
 |-------|-------|
@@ -58,13 +58,13 @@ Select 2–20 commits and get a concise summary with bullet points of key change
 
 ### Background Monitoring
 
-GitNarrate polls your repositories on a configurable interval (1 min to 1 hour) and sends native macOS notifications when new commits arrive. A menu bar icon keeps you informed at a glance.
+GitRanger polls your repositories on a configurable interval (1 min to 1 hour) and sends native macOS notifications when new commits arrive. A menu bar icon keeps you informed at a glance.
 
 ---
 
 ## AI Providers
 
-GitNarrate is provider-agnostic. Pick the one that fits your workflow:
+GitRanger is provider-agnostic. Pick the one that fits your workflow:
 
 | Provider | Key Required | Local | Repo Context |
 |----------|:---:|:---:|:---:|
@@ -88,15 +88,15 @@ Claude Code is recommended — zero API key setup, uses your existing Claude sub
 
 ```bash
 # Clone and build
-git clone https://github.com/franzejr/GitNarrate.git
-cd GitNarrate
+git clone https://github.com/franzejr/GitRanger.git
+cd GitRanger
 
 swift build
 swift run
 
 # Or build a release binary
 swift build -c release
-.build/release/GitNarrate
+.build/release/GitRanger
 ```
 
 ### Setting Up Claude Code (Recommended)
@@ -151,7 +151,7 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 ```
 ├── Package.swift
 ├── Sources/
-│   └── GitNarrate/
+│   └── GitRanger/
 │       ├── App/            # Entry point, menu bar, settings
 │       ├── Models/         # SwiftData models (Repo, Commit, PRReview, SubAgentReview)
 │       ├── Resources/      # App icon, menu bar icon
@@ -167,8 +167,7 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
 | **Build & Lint** | Push/PR to main | `swift build`, `swift test`, SwiftLint |
-| **Dependency Audit** | Package.swift changes + weekly | osv-scanner vulnerability check |
-| **Binary Size** | PRs | Comments binary size delta on PRs |
+| **Dependency Check** | Package.swift changes + weekly | Resolves and validates the Swift package graph |
 | **Release** | Tag `v*` | Builds .app bundle, creates GitHub Release |
 
 ## Documentation
