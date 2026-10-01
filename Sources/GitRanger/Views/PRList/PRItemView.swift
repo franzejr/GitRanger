@@ -4,6 +4,7 @@ struct PRItemView: View {
     let pr: PullRequest
     var isSelected = false
     var currentUser: String?
+    var reviewActivity: PRReviewActivity?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -18,6 +19,11 @@ struct PRItemView: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 4)
+                if reviewActivity != nil {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .help(activityLabel)
+                }
                 reviewBadge
                 if pr.isDraft { badge("DRAFT", color: GRTheme.mutedSecondary(colorScheme)) }
             }
@@ -40,7 +46,14 @@ struct PRItemView: View {
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(GRTheme.muted(colorScheme))
 
-            if let statusLine {
+            if let reviewActivity {
+                HStack(spacing: 5) {
+                    Circle().fill(GRTheme.accent).frame(width: 5, height: 5)
+                    Text(activityLabel(for: reviewActivity))
+                        .font(.system(size: 10))
+                        .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
+                }
+            } else if let statusLine {
                 HStack(spacing: 5) {
                     Circle().fill(statusLine.color).frame(width: 5, height: 5)
                     Text(statusLine.text)
@@ -62,6 +75,18 @@ struct PRItemView: View {
             Rectangle().fill(GRTheme.line(colorScheme)).frame(height: 1)
         }
         .contentShape(Rectangle())
+    }
+
+    private var activityLabel: String {
+        guard let reviewActivity else { return "" }
+        return activityLabel(for: reviewActivity)
+    }
+
+    private func activityLabel(for activity: PRReviewActivity) -> String {
+        switch activity {
+        case .loading: "Loading pull request..."
+        case .reviewing: "AI review running in background"
+        }
     }
 
     @ViewBuilder

@@ -11,6 +11,7 @@ final class PRReviewViewModel {
     var isLoadingSecondReview = false
     var error: String?
     var diff: String?
+    var prDetail: PRDetail?
     var selectedPR: PullRequest?
     var isCached = false
 
@@ -41,6 +42,17 @@ final class PRReviewViewModel {
     var isAnyAgentLoading: Bool {
         !agentLoading.isEmpty || !agentQueued.isEmpty
             || !customAgentLoading.isEmpty || !customAgentQueued.isEmpty
+    }
+
+    var activity: PRReviewActivity? {
+        if isAnyAgentLoading || isLoadingSecondReview
+            || !agentDeepLoading.isEmpty {
+            return .reviewing
+        }
+        if isLoading {
+            return diff == nil ? .loading : .reviewing
+        }
+        return nil
     }
     var completedAgentCount: Int {
         agentReviews.count + customAgentReviews.count
@@ -77,19 +89,30 @@ final class PRReviewViewModel {
         modelContext = context
     }
 
-    func loadPR(_ pr: PullRequest, repo: Repo) async {
+    func prepareToLoad(_ pr: PullRequest) {
         selectedPR = pr
         isLoading = true
         error = nil
         review = nil
         secondReview = nil
         diff = nil
+        prDetail = nil
         isCached = false
         agentReviews = [:]
         agentErrors = [:]
         agentLoading = []
         agentQueued = []
         agentCached = []
+    }
+
+    func loadPR(_ pr: PullRequest, repo: Repo) async {
+        if selectedPR?.number == pr.number
+            && selectedPR?.headRefOid == pr.headRefOid {
+            isLoading = true
+            error = nil
+        } else {
+            prepareToLoad(pr)
+        }
 
         do {
             if let cached = findCachedReview(
@@ -108,24 +131,44 @@ final class PRReviewViewModel {
                 headSha: pr.headRefOid
             )
 
-            if gitlabService.isGitLabRepo(url: repo.url) {
-                diff = try await gitlabService.getMRDiff(
-                    repoUrl: repo.url,
-                    mrNumber: pr.number,
-                    host: repo.glHost
-                )
-            } else {
-                diff = try await githubService.getPRDiff(
-                    repoUrl: repo.url,
-                    prNumber: pr.number,
-                    account: repo.ghAccount
-                )
-            }
+            try await loadRemoteContent(for: pr, repo: repo)
         } catch {
             self.error = error.localizedDescription
         }
 
         isLoading = false
+    }
+
+    private func loadRemoteContent(
+        for pr: PullRequest, repo: Repo
+    ) async throws {
+        if gitlabService.isGitLabRepo(url: repo.url) {
+            async let loadedDiff = gitlabService.getMRDiff(
+                repoUrl: repo.url,
+                mrNumber: pr.number,
+                host: repo.glHost
+            )
+            async let loadedDetail = gitlabService.getMRDetail(
+                repoUrl: repo.url,
+                mrNumber: pr.number,
+                host: repo.glHost
+            )
+            diff = try await loadedDiff
+            prDetail = try await loadedDetail
+        } else {
+            async let loadedDiff = githubService.getPRDiff(
+                repoUrl: repo.url,
+                prNumber: pr.number,
+                account: repo.ghAccount
+            )
+            async let loadedDetail = githubService.getPRDetail(
+                repoUrl: repo.url,
+                prNumber: pr.number,
+                account: repo.ghAccount
+            )
+            diff = try await loadedDiff
+            prDetail = try await loadedDetail
+        }
     }
 
     // MARK: - Legacy Single Review
@@ -220,6 +263,7 @@ final class PRReviewViewModel {
         isLoading = false
         isLoadingSecondReview = false
         diff = nil
+        prDetail = nil
         selectedPR = nil
         isCached = false
         actionError = nil

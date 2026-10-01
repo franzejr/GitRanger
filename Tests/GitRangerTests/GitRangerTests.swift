@@ -441,3 +441,96 @@ final class AIWorkCoordinatorTests: XCTestCase {
         XCTAssertEqual(peak, 2)
     }
 }
+
+// MARK: - PR Review Session Tests
+
+@MainActor
+final class PRReviewSessionStoreTests: XCTestCase {
+    func testSwitchingPRKeepsFirstReviewRunning() {
+        let store = PRReviewSessionStore()
+        let firstPR = makePullRequest(number: 10, sha: "first")
+        let secondPR = makePullRequest(number: 11, sha: "second")
+
+        XCTAssertTrue(store.select(firstPR, repoURL: "https://example.com/repo"))
+        let firstViewModel = store.selectedViewModel
+        firstViewModel?.isLoading = false
+        firstViewModel?.diff = "diff"
+        firstViewModel?.agentLoading.insert(.performance)
+
+        XCTAssertTrue(store.select(secondPR, repoURL: "https://example.com/repo"))
+
+        XCTAssertEqual(store.selectedViewModel?.selectedPR?.number, 11)
+        XCTAssertEqual(
+            store.activity(
+                for: firstPR,
+                repoURL: "https://example.com/repo"
+            ),
+            .reviewing
+        )
+
+        XCTAssertFalse(store.select(firstPR, repoURL: "https://example.com/repo"))
+        XCTAssertTrue(store.selectedViewModel === firstViewModel)
+    }
+
+    func testNewHeadSHAStartsANewReviewSession() {
+        let store = PRReviewSessionStore()
+        let oldHead = makePullRequest(number: 10, sha: "old")
+        let newHead = makePullRequest(number: 10, sha: "new")
+
+        XCTAssertTrue(store.select(oldHead, repoURL: "https://example.com/repo"))
+        let oldViewModel = store.selectedViewModel
+
+        XCTAssertTrue(store.select(newHead, repoURL: "https://example.com/repo"))
+        XCTAssertFalse(store.selectedViewModel === oldViewModel)
+        XCTAssertEqual(store.sessions.count, 2)
+    }
+
+    func testCompletedSessionsAreEvictedWithoutStoppingActiveReviews() {
+        let store = PRReviewSessionStore(maxRetainedSessions: 2)
+        let activePR = makePullRequest(number: 10, sha: "active")
+        let completedPR = makePullRequest(number: 11, sha: "completed")
+        let newestPR = makePullRequest(number: 12, sha: "newest")
+
+        store.select(activePR, repoURL: "https://example.com/repo")
+        let activeViewModel = store.selectedViewModel
+        activeViewModel?.diff = "diff"
+        activeViewModel?.agentLoading.insert(.security)
+
+        store.select(completedPR, repoURL: "https://example.com/repo")
+        store.selectedViewModel?.isLoading = false
+        store.select(newestPR, repoURL: "https://example.com/repo")
+
+        XCTAssertEqual(store.sessions.count, 2)
+        XCTAssertTrue(store.sessions.values.contains { $0 === activeViewModel })
+        XCTAssertFalse(store.sessions.keys.contains(PRReviewSessionKey(
+            repoURL: "https://example.com/repo",
+            pullRequest: completedPR
+        )))
+        XCTAssertEqual(
+            store.activity(for: activePR, repoURL: "https://example.com/repo"),
+            .reviewing
+        )
+    }
+
+    private func makePullRequest(number: Int, sha: String) -> PullRequest {
+        PullRequest(
+            number: number,
+            title: "PR \(number)",
+            authorLogin: "reviewer",
+            state: "OPEN",
+            headRefName: "feature-\(number)",
+            headRefOid: sha,
+            baseRefName: "main",
+            createdAt: Date(),
+            updatedAt: Date(),
+            additions: 1,
+            deletions: 0,
+            changedFiles: 1,
+            url: "https://example.com/repo/pull/\(number)",
+            isDraft: false,
+            reviewDecision: "",
+            reviewRequests: [],
+            latestReviews: []
+        )
+    }
+}

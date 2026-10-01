@@ -4,6 +4,7 @@ struct PRListView: View {
     @Bindable var viewModel: PRListViewModel
     @Environment(\.colorScheme) private var colorScheme
     var repo: Repo?
+    var reviewActivity: (PullRequest) -> PRReviewActivity? = { _ in nil }
     var onSelectPR: (PullRequest) -> Void
 
     @State private var selectedPRNumber: Int?
@@ -178,7 +179,8 @@ struct PRListView: View {
                         PRItemView(
                             pr: pr,
                             isSelected: selectedPRNumber == pr.number,
-                            currentUser: currentUser
+                            currentUser: currentUser,
+                            reviewActivity: reviewActivity(pr)
                         )
                     }
                     .buttonStyle(.plain)

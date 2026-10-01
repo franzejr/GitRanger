@@ -17,7 +17,7 @@ struct ContentView: View {
     @State private var commitDetailVM = CommitDetailViewModel()
     @State private var narrativeVM = NarrativeViewModel()
     @State private var prListVM = PRListViewModel()
-    @State private var prReviewVM = PRReviewViewModel()
+    @State private var prReviewSessions = PRReviewSessionStore()
     @State private var changesVM = ChangesViewModel()
     @State private var selectedCommit: Commit?
     @State private var contentMode: ContentMode = .commits
@@ -73,7 +73,7 @@ struct ContentView: View {
             ChangesDetailView(viewModel: changesVM, repo: repoListVM.selectedRepo)
         } else if narrativeVM.isLoading || narrativeVM.narrative != nil || narrativeVM.error != nil {
             NarrativeView(viewModel: narrativeVM)
-        } else if prReviewVM.selectedPR != nil {
+        } else if let prReviewVM = prReviewSessions.selectedViewModel {
             PRReviewView(viewModel: prReviewVM, repo: repoListVM.selectedRepo)
         } else if commitDetailVM.commit != nil {
             CommitDetailView(viewModel: commitDetailVM)
@@ -116,13 +116,13 @@ struct ContentView: View {
             onSelectCommit: { commit in
                 selectedCommit = commit
                 narrativeVM.dismiss()
-                prReviewVM.dismiss()
+                prReviewSessions.deselect()
                 Task { await commitDetailVM.loadDetail(commit: commit) }
             },
             onTellStory: {
                 selectedCommit = nil
                 commitDetailVM.clear()
-                prReviewVM.dismiss()
+                prReviewSessions.deselect()
                 Task {
                     await narrativeVM.generateNarrative(
                         commitIds: commitListVM.checkedCommitIds
@@ -147,12 +147,25 @@ struct ContentView: View {
         PRListView(
             viewModel: prListVM,
             repo: repoListVM.selectedRepo,
+            reviewActivity: { pr in
+                guard let repo = repoListVM.selectedRepo else { return nil }
+                return prReviewSessions.activity(for: pr, repoURL: repo.url)
+            },
             onSelectPR: { pr in
                 guard let repo = repoListVM.selectedRepo else { return }
                 selectedCommit = nil
                 commitDetailVM.clear()
                 narrativeVM.dismiss()
-                Task { await prReviewVM.loadPR(pr, repo: repo) }
+                let needsLoad = prReviewSessions.select(
+                    pr,
+                    repoURL: repo.url,
+                    modelContext: modelContext
+                )
+                guard needsLoad,
+                      let viewModel = prReviewSessions.selectedViewModel else {
+                    return
+                }
+                Task { await viewModel.loadPR(pr, repo: repo) }
             }
         )
     }
@@ -171,7 +184,6 @@ struct ContentView: View {
         commitListVM.setModelContext(modelContext)
         commitDetailVM.setModelContext(modelContext)
         narrativeVM.setModelContext(modelContext)
-        prReviewVM.setModelContext(modelContext)
         repoListVM.loadRepos()
     }
 
@@ -179,7 +191,7 @@ struct ContentView: View {
         selectedCommit = nil
         commitDetailVM.clear()
         narrativeVM.dismiss()
-        prReviewVM.dismiss()
+        prReviewSessions.deselect()
         prListVM.clear()
         changesVM.clear()
         contentMode = .commits
