@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -21,8 +23,22 @@ jobs:
         id: version
         run: |
           BUILD=$(git rev-list --count HEAD)
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          TAG="${GITHUB_REF#refs/tags/}"
+
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAG="$GITHUB_REF_NAME"
+          else
+            BASE_TAG=$(git tag --sort=-version:refname \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | head -1 || true)
+            VERSION="${BASE_TAG#v}"
+
+            if [ -z "$VERSION" ]; then
+              VERSION="0.1.0"
+            fi
+
+            TAG="v${VERSION}+${BUILD}"
+          fi
 
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
@@ -34,11 +50,16 @@ jobs:
         run: |
           CURRENT_TAG="${{ steps.version.outputs.TAG }}"
 
-          # Ignore legacy auto-release tags containing build metadata.
-          PREV_TAG=$(git tag --sort=-version:refname \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | grep -v "^${CURRENT_TAG}$" \
-            | head -1 || true)
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            # Stable releases describe everything since the prior stable tag.
+            PREV_TAG=$(git tag --sort=-version:refname \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | grep -v "^${CURRENT_TAG}$" \
+              | head -1 || true)
+          else
+            # Automatic releases describe only changes since the nearest tag.
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          fi
 
           if [ -z "$PREV_TAG" ]; then
             RANGE="HEAD"
@@ -131,6 +152,7 @@ jobs:
           name: GitRanger ${{ steps.version.outputs.VERSION }} (build ${{ steps.version.outputs.BUILD }})
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           files: GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
