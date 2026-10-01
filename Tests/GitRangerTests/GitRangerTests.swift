@@ -130,6 +130,26 @@ final class CommitListViewModelTests: XCTestCase {
 
 final class AIModelsTests: XCTestCase {
 
+    func testClaudeAvailabilityExplainsInvalidConfiguredExecutable() async {
+        let defaults = UserDefaults.standard
+        let previousPath = defaults.string(forKey: "claudePath")
+        let missingPath = "/tmp/gitranger-missing-\(UUID().uuidString)/claude"
+        defaults.set(missingPath, forKey: "claudePath")
+        defer {
+            if let previousPath {
+                defaults.set(previousPath, forKey: "claudePath")
+            } else {
+                defaults.removeObject(forKey: "claudePath")
+            }
+        }
+
+        let status = await ClaudeCodeService().availabilityStatus()
+
+        XCTAssertFalse(status.isAvailable)
+        XCTAssertTrue(status.detail.contains("missing or not executable"))
+        XCTAssertTrue(status.detail.contains(missingPath))
+    }
+
     func testClaudeAuthenticationErrorExplainsHowToLogin() {
         let result = ShellService.ShellResult(
             stdout: """

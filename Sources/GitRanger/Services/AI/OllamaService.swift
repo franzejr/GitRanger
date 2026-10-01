@@ -13,12 +13,31 @@ final class OllamaService: AIServiceProtocol {
     }
 
     func isAvailable() async -> Bool {
-        guard let url = URL(string: "\(baseURL)/api/tags") else { return false }
+        await availabilityStatus().isAvailable
+    }
+
+    func availabilityStatus() async -> AIAvailabilityStatus {
+        let endpoint = "\(baseURL)/api/tags"
+        guard let url = URL(string: endpoint) else {
+            return AIAvailabilityStatus(
+                isAvailable: false,
+                detail: "The Ollama server URL is invalid: \(baseURL)"
+            )
+        }
         do {
             let (_, response) = try await URLSession.shared.data(from: url)
-            return (response as? HTTPURLResponse)?.statusCode == 200
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            return AIAvailabilityStatus(
+                isAvailable: statusCode == 200,
+                detail: statusCode == 200
+                    ? "Connected to Ollama at \(baseURL)."
+                    : "Ollama at \(baseURL) returned HTTP \(statusCode)."
+            )
         } catch {
-            return false
+            return AIAvailabilityStatus(
+                isAvailable: false,
+                detail: "Could not reach Ollama at \(baseURL): \(error.localizedDescription)"
+            )
         }
     }
 

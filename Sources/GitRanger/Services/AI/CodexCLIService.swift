@@ -22,7 +22,32 @@ final class CodexCLIService: AIServiceProtocol {
     }
 
     func isAvailable() async -> Bool {
-        guard await binaryIsAvailable() else { return false }
+        await availabilityStatus().isAvailable
+    }
+
+    func availabilityStatus() async -> AIAvailabilityStatus {
+        let binary = codexBinary
+        var resolvedBinary = binary
+
+        if binary.contains("/") {
+            guard FileManager.default.isExecutableFile(atPath: binary) else {
+                return AIAvailabilityStatus(
+                    isAvailable: false,
+                    detail: "The configured Codex executable is missing or not executable: \(binary)"
+                )
+            }
+        } else {
+            do {
+                resolvedBinary = try await shell.execute(
+                    "which", arguments: [binary], timeout: 5
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !resolvedBinary.isEmpty else {
+                    return unavailableExecutableStatus()
+                }
+            } catch {
+                return unavailableExecutableStatus()
+            }
+        }
 
         do {
             let result = try await executeCodex(
@@ -31,9 +56,21 @@ final class CodexCLIService: AIServiceProtocol {
                 cwd: nil,
                 timeout: 10
             )
-            return result.exitCode == 0
+            guard result.exitCode == 0 else {
+                return AIAvailabilityStatus(
+                    isAvailable: false,
+                    detail: Self.errorMessage(from: result)
+                )
+            }
+            return AIAvailabilityStatus(
+                isAvailable: true,
+                detail: "Authenticated with Codex CLI at \(resolvedBinary)."
+            )
         } catch {
-            return false
+            return AIAvailabilityStatus(
+                isAvailable: false,
+                detail: "Could not run Codex CLI at \(resolvedBinary): \(error.localizedDescription)"
+            )
         }
     }
 
@@ -131,18 +168,12 @@ final class CodexCLIService: AIServiceProtocol {
         return useRepoContext ? repoPath : nil
     }
 
-    private func binaryIsAvailable() async -> Bool {
-        if codexBinary.contains("/") {
-            return FileManager.default.isExecutableFile(atPath: codexBinary)
-        }
-        do {
-            let output = try await shell.execute(
-                "which", arguments: [codexBinary], timeout: 5
-            )
-            return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } catch {
-            return false
-        }
+    private func unavailableExecutableStatus() -> AIAvailabilityStatus {
+        AIAvailabilityStatus(
+            isAvailable: false,
+            detail: "Codex CLI was not found in the app PATH. "
+                + "Set its full executable path in Settings → Accounts → Codex CLI."
+        )
     }
 
     private func executeCodex(

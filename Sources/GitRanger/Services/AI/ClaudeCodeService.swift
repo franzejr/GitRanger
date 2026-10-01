@@ -6,28 +6,59 @@ final class ClaudeCodeService: AIServiceProtocol {
 
     private let shell = ShellService.shared
 
+    private enum ExecutableResolution {
+        case available(String)
+        case unavailable(AIAvailabilityStatus)
+    }
+
     private var claudeBinary: String {
         let custom = UserDefaults.standard.string(forKey: "claudePath") ?? ""
         return custom.isEmpty ? "claude" : custom
     }
 
     func isAvailable() async -> Bool {
+        await availabilityStatus().isAvailable
+    }
+
+    func availabilityStatus() async -> AIAvailabilityStatus {
+        switch await resolveExecutable() {
+        case .available(let binary):
+            return await authenticationStatus(binary: binary)
+        case .unavailable(let status):
+            return status
+        }
+    }
+
+    private func resolveExecutable() async -> ExecutableResolution {
         let binary = claudeBinary
         if binary != "claude" {
             guard FileManager.default.isExecutableFile(atPath: binary) else {
-                return false
+                return .unavailable(AIAvailabilityStatus(
+                    isAvailable: false,
+                    detail: "The configured Claude executable is missing or not executable: \(binary)"
+                ))
             }
-        } else {
-            do {
-                let output = try await shell.execute("which", arguments: ["claude"])
-                guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    return false
-                }
-            } catch {
-                return false
-            }
+            return .available(binary)
         }
 
+        do {
+            let output = try await shell.execute(
+                "which", arguments: ["claude"], timeout: 5
+            )
+            let resolved = output.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            return resolved.isEmpty
+                ? .unavailable(unavailableExecutableStatus())
+                : .available(resolved)
+        } catch {
+            return .unavailable(unavailableExecutableStatus())
+        }
+    }
+
+    private func authenticationStatus(
+        binary: String
+    ) async -> AIAvailabilityStatus {
         do {
             let result = try await executeClaudeBinary(
                 arguments: ["auth", "status"],
@@ -35,16 +66,36 @@ final class ClaudeCodeService: AIServiceProtocol {
                 stdinData: Data(),
                 timeout: 10
             )
-            guard result.exitCode == 0,
-                  let data = result.stdout.data(using: .utf8),
+            guard result.exitCode == 0 else {
+                return AIAvailabilityStatus(
+                    isAvailable: false,
+                    detail: Self.errorMessage(from: result)
+                )
+            }
+            guard let data = result.stdout.data(using: .utf8),
                   let status = try? JSONDecoder().decode(
                     ClaudeAuthStatus.self, from: data
                   ) else {
-                return false
+                return AIAvailabilityStatus(
+                    isAvailable: false,
+                    detail: "Claude Code returned an unexpected response to `claude auth status`."
+                )
             }
-            return status.loggedIn
+            guard status.loggedIn else {
+                return AIAvailabilityStatus(
+                    isAvailable: false,
+                    detail: "Claude Code is not authenticated. Open Terminal, run `claude login`, then retry."
+                )
+            }
+            return AIAvailabilityStatus(
+                isAvailable: true,
+                detail: "Authenticated with Claude Code at \(binary)."
+            )
         } catch {
-            return false
+            return AIAvailabilityStatus(
+                isAvailable: false,
+                detail: "Could not run Claude Code at \(binary): \(error.localizedDescription)"
+            )
         }
     }
 
@@ -85,6 +136,15 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     // MARK: - Private
+
+    private func unavailableExecutableStatus() -> AIAvailabilityStatus {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? "(not set)"
+        return AIAvailabilityStatus(
+            isAvailable: false,
+            detail: "Claude Code was not found in the app PATH (\(path)). "
+                + "Set its full executable path in Settings → Accounts → Claude Code."
+        )
+    }
 
     private func runClaude(
         prompt: String,

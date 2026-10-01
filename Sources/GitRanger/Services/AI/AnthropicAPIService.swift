@@ -16,6 +16,15 @@ final class AnthropicAPIService: AIServiceProtocol {
         !apiKey.isEmpty
     }
 
+    func availabilityStatus() async -> AIAvailabilityStatus {
+        AIAvailabilityStatus(
+            isAvailable: !apiKey.isEmpty,
+            detail: apiKey.isEmpty
+                ? "No Anthropic API key is configured."
+                : "An Anthropic API key is configured. It will be validated when the first request is sent."
+        )
+    }
+
     func summarize(
         commitMessage: String,
         diff: String,

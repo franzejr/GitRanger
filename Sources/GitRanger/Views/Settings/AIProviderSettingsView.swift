@@ -70,6 +70,8 @@ struct AIProviderSettingsView: View {
                 .disabled(settingsVM.isChecking)
             }
 
+            availabilityDiagnostic
+
             switch selectedProvider {
             case .claudeCode: claudeConfiguration
             case .codexCLI: codexConfiguration
@@ -94,6 +96,39 @@ struct AIProviderSettingsView: View {
                 Text(available ? "Connected" : "Not available")
                     .font(.system(size: 11))
                     .foregroundStyle(available ? GRTheme.success : GRTheme.danger)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var availabilityDiagnostic: some View {
+        if let status = settingsVM.availabilityStatus(for: selectedProvider) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("Connection diagnostic")
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Spacer()
+                    Text(status.checkedAt, style: .time)
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(GRTheme.muted(colorScheme))
+                }
+                Text(status.detail)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(
+                        status.isAvailable
+                            ? GRTheme.mutedSecondary(colorScheme)
+                            : GRTheme.danger
+                    )
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GRTheme.background(colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(GRTheme.line(colorScheme))
             }
         }
     }

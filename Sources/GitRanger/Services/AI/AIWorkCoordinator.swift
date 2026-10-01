@@ -59,6 +59,10 @@ final class CoordinatedAIService: AIServiceProtocol {
         await base.isAvailable()
     }
 
+    func availabilityStatus() async -> AIAvailabilityStatus {
+        await base.availabilityStatus()
+    }
+
     func summarize(
         commitMessage: String,
         diff: String,
