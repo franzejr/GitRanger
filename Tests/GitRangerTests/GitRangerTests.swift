@@ -1028,12 +1028,15 @@ final class ReviewRoutineTests: XCTestCase {
         XCTAssertTrue(comment.contains("test-model · effort: low"))
     }
 
-    func testScheduleAdvancesFromRunDate() {
+    @MainActor
+    func testScheduleAdvancesFromRunDate() throws {
+        let container = try makeModelContainer()
         let routine = ReviewRoutine(
             name: "Review open PRs",
             repoIDs: [UUID()],
             intervalMinutes: 15
         )
+        container.mainContext.insert(routine)
         let runDate = Date(timeIntervalSince1970: 1_000)
 
         routine.markScheduled(from: runDate)
@@ -1047,15 +1050,7 @@ final class ReviewRoutineTests: XCTestCase {
 
     @MainActor
     func testEditingRoutineUpdatesExistingRecord() throws {
-        let schema = Schema([ReviewRoutine.self, RoutineRun.self])
-        let configuration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: true
-        )
-        let container = try ModelContainer(
-            for: schema,
-            configurations: [configuration]
-        )
+        let container = try makeModelContainer()
         let routine = ReviewRoutine(
             name: "Original",
             repoIDs: [UUID()],
@@ -1109,16 +1104,21 @@ final class ReviewRoutineTests: XCTestCase {
         XCTAssertTrue(first.hasPrefix("<!-- gitranger:routine="))
     }
 
-    func testCompletedHeadIsDeduplicatedAndFailedHeadCanRetry() {
+    @MainActor
+    func testCompletedHeadIsDeduplicatedAndFailedHeadCanRetry() throws {
+        let container = try makeModelContainer()
         let routine = makeRoutine()
         let repo = makeRepo()
         let pullRequest = makePullRequest(sha: "head-one")
+        container.mainContext.insert(routine)
+        container.mainContext.insert(repo)
         let run = RoutineRun(
             routine: routine,
             repo: repo,
             pullRequest: pullRequest,
             trigger: .schedule
         )
+        container.mainContext.insert(run)
         run.status = .completed
 
         XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(
@@ -1145,14 +1145,21 @@ final class ReviewRoutineTests: XCTestCase {
         ))
     }
 
-    func testRunPersistsAgentActivitySnapshots() {
+    @MainActor
+    func testRunPersistsAgentActivitySnapshots() throws {
+        let container = try makeModelContainer()
         let pullRequest = makePullRequest(sha: "abc")
+        let routine = makeRoutine()
+        let repo = makeRepo()
+        container.mainContext.insert(routine)
+        container.mainContext.insert(repo)
         let run = RoutineRun(
-            routine: makeRoutine(),
-            repo: makeRepo(),
+            routine: routine,
+            repo: repo,
             pullRequest: pullRequest,
             trigger: .manual
         )
+        container.mainContext.insert(run)
         let snapshot = RoutineAgentSnapshot(
             id: ReviewAgent.security.rawValue,
             name: ReviewAgent.security.displayName,
@@ -1275,6 +1282,26 @@ final class ReviewRoutineTests: XCTestCase {
             reviewDecision: "",
             reviewRequests: [],
             latestReviews: []
+        )
+    }
+
+    @MainActor
+    private func makeModelContainer() throws -> ModelContainer {
+        let schema = Schema([
+            Repo.self,
+            Commit.self,
+            PRReview.self,
+            SubAgentReview.self,
+            ReviewRoutine.self,
+            RoutineRun.self
+        ])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true
+        )
+        return try ModelContainer(
+            for: schema,
+            configurations: [configuration]
         )
     }
 }
