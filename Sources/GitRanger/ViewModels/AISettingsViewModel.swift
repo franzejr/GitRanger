@@ -48,7 +48,16 @@ final class AISettingsViewModel {
                 provider: provider,
                 settings: AIServiceFactory.settingsFromUserDefaults()
             )
-            modelOptions[provider] = Self.merge(builtIn, discovered)
+            if provider == .claudeCode || provider == .codexCLI {
+                let defaultOption = builtIn.filter { $0.id.isEmpty }
+                let aliases = builtIn.filter { !$0.id.isEmpty }
+                modelOptions[provider] = Self.merge(
+                    defaultOption + discovered,
+                    aliases
+                )
+            } else {
+                modelOptions[provider] = Self.merge(builtIn, discovered)
+            }
         } catch {
             modelLoadErrors[provider] = error.localizedDescription
         }

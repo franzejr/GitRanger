@@ -146,6 +146,7 @@ struct ReviewRunMetadata: Equatable, Sendable {
     let reviewerName: String
     let providerName: String
     let modelName: String
+    let reasoningEffort: String
     let reviewedAt: Date
 }
 
@@ -282,12 +283,12 @@ struct CommitDiff {
 
 // MARK: - Pull Request Types
 
-struct PRReviewStatus {
+struct PRReviewStatus: Sendable {
     let login: String
     let state: String // APPROVED, CHANGES_REQUESTED, COMMENTED, PENDING
 }
 
-struct PullRequest: Identifiable {
+struct PullRequest: Identifiable, Sendable {
     let number: Int
     let title: String
     let authorLogin: String

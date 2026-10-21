@@ -4,17 +4,24 @@ final class ClaudeCodeService: AIServiceProtocol {
     let displayName = "Claude Code (Local)"
     let requiresAPIKey = false
     var modelName: String {
-        Self.resolvedModel(
-            selected: UserDefaults.standard.string(
-                forKey: "claudeModel"
-            ) ?? "haiku",
+        if let modelOverride, !modelOverride.isEmpty { return modelOverride }
+        let selected = Self.resolvedModel(
+            selected: UserDefaults.standard.string(forKey: "claudeModel") ?? "",
             custom: UserDefaults.standard.string(
                 forKey: "claudeCustomModel"
             ) ?? ""
         )
+        guard selected.isEmpty else { return selected }
+        return LocalAIModelCatalog.configuredModel(for: .claudeCode)
+            ?? "CLI default"
     }
 
     private let shell = ShellService.shared
+    private let modelOverride: String?
+
+    init(modelOverride: String? = nil) {
+        self.modelOverride = modelOverride
+    }
 
     private enum ExecutableResolution {
         case available(String)
@@ -125,6 +132,14 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     func generate(prompt: String, repoPath: URL?) async throws -> String {
+        try await generate(prompt: prompt, repoPath: repoPath, timeout: 300)
+    }
+
+    func generate(
+        prompt: String,
+        repoPath: URL?,
+        timeout: TimeInterval
+    ) async throws -> String {
         let binary = try await executablePath()
         let useRepoContext = UserDefaults.standard.object(
             forKey: "claudeRepoContext"
@@ -133,7 +148,7 @@ final class ClaudeCodeService: AIServiceProtocol {
             binary: binary,
             prompt: prompt,
             repoPath: useRepoContext ? repoPath : nil,
-            timeout: 300,
+            timeout: timeout,
             useTools: useRepoContext
         )
     }
@@ -183,7 +198,7 @@ final class ClaudeCodeService: AIServiceProtocol {
         )
 
         guard result.exitCode == 0 else {
-            throw claudeError(result)
+            throw claudeError(result, timeout: timeout)
         }
 
         return try parseClaudeOutput(result.stdout)
@@ -192,16 +207,20 @@ final class ClaudeCodeService: AIServiceProtocol {
     private func buildArguments(
         useTools: Bool, repoPath: URL?
     ) -> [String] {
-        let model = Self.resolvedModel(
-            selected: UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku",
-            custom: UserDefaults.standard.string(forKey: "claudeCustomModel") ?? ""
-        )
         var args = [
             "-p", "-",
             "--output-format", "json",
-            "--model", model,
             "--no-session-persistence"
         ]
+        let selected = modelOverride ?? Self.resolvedModel(
+            selected: UserDefaults.standard.string(forKey: "claudeModel") ?? "",
+            custom: UserDefaults.standard.string(
+                forKey: "claudeCustomModel"
+            ) ?? ""
+        )
+        if !selected.isEmpty {
+            args += ["--model", selected]
+        }
         if useTools {
             args += ["--allowedTools", "Read,Grep,Glob"]
         }
@@ -236,11 +255,13 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     private func claudeError(
-        _ result: ShellService.ShellResult
+        _ result: ShellService.ShellResult,
+        timeout: TimeInterval
     ) -> AIError {
         if result.exitCode == 15 {
             return .providerError(
-                "Request timed out. Try selecting fewer commits."
+                "Claude Code exceeded the \(Int(timeout / 60))-minute "
+                    + "timeout. Retry this agent or reduce the PR scope."
             )
         }
         return .providerError(Self.errorMessage(from: result))

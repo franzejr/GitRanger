@@ -21,10 +21,27 @@ struct ContentView: View {
     @State private var changesVM = ChangesViewModel()
     @State private var selectedCommit: Commit?
     @State private var contentMode: ContentMode = .commits
+    @State private var showRoutines = false
+    @State private var selectedRoutineID: UUID?
+    @Bindable var routineEngine: RoutineEngine
 
     var body: some View {
         NavigationSplitView {
-            RepoListView(viewModel: repoListVM)
+            RepoListView(
+                viewModel: repoListVM,
+                isRoutinesSelected: showRoutines,
+                activeRoutineRunCount: routineEngine.activeRuns.count,
+                onSelectRoutines: {
+                    showRoutines = true
+                    selectedRoutineID = selectedRoutineID
+                        ?? routineEngine.routines.first?.id
+                    narrativeVM.dismiss()
+                    prReviewSessions.deselect()
+                },
+                onSelectRepository: {
+                    showRoutines = false
+                }
+            )
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
         } content: {
             contentColumn
@@ -45,7 +62,13 @@ struct ContentView: View {
 
     @ViewBuilder
     private var contentColumn: some View {
-        if repoListVM.selectedRepoId != nil {
+        if showRoutines {
+            RoutineListView(
+                engine: routineEngine,
+                repositories: repoListVM.repos,
+                selectedRoutineID: $selectedRoutineID
+            )
+        } else if repoListVM.selectedRepoId != nil {
             VStack(spacing: 0) {
                 modePicker
                 switch contentMode {
@@ -69,7 +92,12 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if contentMode == .changes {
+        if showRoutines {
+            RoutineDashboardView(
+                engine: routineEngine,
+                selectedRoutineID: selectedRoutineID
+            )
+        } else if contentMode == .changes {
             ChangesDetailView(viewModel: changesVM, repo: repoListVM.selectedRepo)
         } else if narrativeVM.isLoading || narrativeVM.narrative != nil || narrativeVM.error != nil {
             NarrativeView(viewModel: narrativeVM)

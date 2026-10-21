@@ -34,9 +34,6 @@ struct MRListDTO: Codable {
     }
 
     func toPullRequest() -> PullRequest {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
         let mappedState: String
         switch state {
         case "opened": mappedState = "OPEN"
@@ -63,8 +60,8 @@ struct MRListDTO: Codable {
             headRefName: sourceBranch,
             headRefOid: sha ?? "",
             baseRefName: targetBranch,
-            createdAt: formatter.date(from: createdAt) ?? Date(),
-            updatedAt: formatter.date(from: updatedAt) ?? Date(),
+            createdAt: GitProviderDateParser.parse(createdAt) ?? .distantPast,
+            updatedAt: GitProviderDateParser.parse(updatedAt) ?? .distantPast,
             additions: 0,
             deletions: 0,
             changedFiles: 0,

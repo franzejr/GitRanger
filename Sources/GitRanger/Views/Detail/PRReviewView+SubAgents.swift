@@ -366,13 +366,16 @@ extension PRReviewView {
             Text(metadata.providerName)
             Text("·")
             Text(metadata.modelName)
+            Text("·")
+            Text("effort: \(metadata.reasoningEffort)")
         }
         .font(.system(size: 9.5, design: .monospaced))
         .foregroundStyle(GRTheme.muted(colorScheme))
         .lineLimit(1)
         .help(
             "Reviewed by \(metadata.reviewerName) using "
-                + "\(metadata.providerName) · \(metadata.modelName)"
+                + "\(metadata.providerName) · \(metadata.modelName) · "
+                + "effort: \(metadata.reasoningEffort)"
         )
     }
 }

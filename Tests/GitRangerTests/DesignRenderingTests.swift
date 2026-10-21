@@ -83,10 +83,22 @@ final class DesignRenderingTests: XCTestCase {
             size: CGSize(width: 900, height: 600),
             name: "gitranger-changes-dark"
         )
+        try render(
+            makeRoutineDashboard().preferredColorScheme(.dark),
+            size: CGSize(width: 1_100, height: 760),
+            name: "gitranger-routines-dark"
+        )
     }
 
     private func renderReviewSettings() throws {
-        let schema = Schema([Repo.self, Commit.self, PRReview.self, SubAgentReview.self])
+        let schema = Schema([
+            Repo.self,
+            Commit.self,
+            PRReview.self,
+            SubAgentReview.self,
+            ReviewRoutine.self,
+            RoutineRun.self
+        ])
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: true
@@ -160,6 +172,7 @@ final class DesignRenderingTests: XCTestCase {
                     reviewerName: agent.displayName,
                     providerName: "Local provider",
                     modelName: "sonnet",
+                    reasoningEffort: "low",
                     reviewedAt: Date()
                 )
             }
@@ -231,6 +244,80 @@ final class DesignRenderingTests: XCTestCase {
             ChangesListView(viewModel: viewModel, repo: repo)
                 .frame(width: 280)
             ChangesDetailView(viewModel: viewModel, repo: repo)
+        }
+    }
+
+    private func makeRoutineDashboard() -> some View {
+        let repo = Repo(
+            name: "adaflow",
+            url: "https://github.com/example/adaflow.git",
+            localPath: "/tmp/adaflow"
+        )
+        let routine = ReviewRoutine(
+            name: "Review open PRs",
+            repoIDs: [repo.id],
+            intervalMinutes: 15,
+            publishingMode: .automaticComment
+        )
+        let pullRequest = PullRequest(
+            number: 2_617,
+            title: "fix(pricing): open the support chat from the plan help link",
+            authorLogin: "reviewer",
+            state: "OPEN",
+            headRefName: "ada-1142-pricing-chat-link",
+            headRefOid: "9f0d2a4b8c11",
+            baseRefName: "master",
+            createdAt: Date(),
+            updatedAt: Date(),
+            additions: 21,
+            deletions: 3,
+            changedFiles: 3,
+            url: "https://github.com/example/adaflow/pull/2617",
+            isDraft: false,
+            reviewDecision: "",
+            reviewRequests: [],
+            latestReviews: []
+        )
+        let run = RoutineRun(
+            routine: routine,
+            repo: repo,
+            pullRequest: pullRequest,
+            trigger: .schedule
+        )
+        run.status = .reviewing
+        run.startedAt = Date().addingTimeInterval(-42)
+        run.lastEvent = "Code Quality: Reviewing pull request"
+        run.agentSnapshots = ReviewAgent.allCases.map { agent in
+            RoutineAgentSnapshot(
+                id: agent.rawValue,
+                name: agent.displayName,
+                status: agent == .codeQuality ? .reviewing : .completed,
+                phase: agent == .codeQuality
+                    ? "Reviewing pull request" : "Review complete",
+                providerName: "Local provider",
+                modelName: "sonnet",
+                reviewText: "VERDICT: PASS\n\nNo issues found.",
+                verdict: true,
+                startedAt: Date().addingTimeInterval(-42),
+                completedAt: agent == .codeQuality ? nil : Date()
+            )
+        }
+
+        let engine = RoutineEngine()
+        engine.routines = [routine]
+        engine.runs = [run]
+        return HStack(spacing: 0) {
+            RoutineListView(
+                engine: engine,
+                repositories: [repo],
+                selectedRoutineID: .constant(routine.id)
+            )
+            .frame(width: 300)
+            Divider()
+            RoutineDashboardView(
+                engine: engine,
+                selectedRoutineID: routine.id
+            )
         }
     }
 

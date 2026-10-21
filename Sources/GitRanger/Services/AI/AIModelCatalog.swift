@@ -10,15 +10,15 @@ enum AIModelCatalog {
         switch provider {
         case .claudeCode:
             return [
-                AIModelOption(id: "haiku", name: "Claude Haiku"),
+                AIModelOption(id: "", name: "CLI default"),
                 AIModelOption(id: "sonnet", name: "Claude Sonnet"),
-                AIModelOption(id: "opus", name: "Claude Opus")
+                AIModelOption(id: "opus", name: "Claude Opus"),
+                AIModelOption(id: "fable", name: "Claude Fable"),
+                AIModelOption(id: "haiku", name: "Claude Haiku")
             ]
         case .codexCLI:
             return [
-                AIModelOption(id: "", name: "Provider default"),
-                AIModelOption(id: "gpt-5.1", name: "GPT-5.1"),
-                AIModelOption(id: "gpt-5", name: "GPT-5")
+                AIModelOption(id: "", name: "CLI default")
             ]
         case .anthropicAPI:
             return [
@@ -55,14 +55,16 @@ actor AIModelDiscoveryService {
         settings: AISettings
     ) async throws -> [AIModelOption] {
         switch provider {
+        case .claudeCode:
+            return try LocalAIModelCatalog.claudeOptions()
+        case .codexCLI:
+            return try LocalAIModelCatalog.codexOptions()
         case .anthropicAPI:
             return try await anthropicModels(apiKey: settings.anthropicAPIKey)
         case .openAI:
             return try await openAIModels(apiKey: settings.openAIAPIKey)
         case .ollama:
             return try await ollamaModels(baseURL: settings.ollamaURL)
-        case .claudeCode, .codexCLI:
-            return []
         }
     }
 
@@ -129,6 +131,167 @@ actor AIModelDiscoveryService {
         ].contains { id.localizedCaseInsensitiveContains($0) }
         return supportedPrefix && !excluded
     }
+}
+
+enum LocalAIModelCatalog {
+    static func codexOptions() throws -> [AIModelOption] {
+        let directory = ProcessInfo.processInfo.environment["CODEX_HOME"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex", isDirectory: true)
+        let data = try Data(contentsOf: directory.appendingPathComponent(
+            "models_cache.json"
+        ))
+        return try decodeCodexOptions(from: data)
+    }
+
+    static func claudeOptions() throws -> [AIModelOption] {
+        let directory = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude", isDirectory: true)
+        let catalogDirectory = directory
+            .appendingPathComponent("cache/model-catalog", isDirectory: true)
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey]
+        let files = try FileManager.default.contentsOfDirectory(
+            at: catalogDirectory,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        )
+        let newest = try files
+            .filter { $0.pathExtension == "json" }
+            .max {
+                let lhs = try $0.resourceValues(forKeys: keys)
+                    .contentModificationDate ?? .distantPast
+                let rhs = try $1.resourceValues(forKeys: keys)
+                    .contentModificationDate ?? .distantPast
+                return lhs < rhs
+            }
+        guard let newest else {
+            throw AIError.providerError("Claude CLI model catalog is unavailable.")
+        }
+        return try decodeClaudeOptions(from: Data(contentsOf: newest))
+    }
+
+    static func configuredModel(for provider: AIProvider) -> String? {
+        switch provider {
+        case .codexCLI:
+            let directory = ProcessInfo.processInfo.environment["CODEX_HOME"]
+                .map { URL(fileURLWithPath: $0, isDirectory: true) }
+                ?? FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".codex", isDirectory: true)
+            let url = directory.appendingPathComponent("config.toml")
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+                return nil
+            }
+            return codexConfiguredModel(from: text)
+        case .claudeCode:
+            let directory = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
+                .map { URL(fileURLWithPath: $0, isDirectory: true) }
+                ?? FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".claude", isDirectory: true)
+            let url = directory.appendingPathComponent("settings.json")
+            guard let data = try? Data(contentsOf: url),
+                  let settings = try? JSONDecoder().decode(
+                    ClaudeSettings.self, from: data
+                  ) else {
+                return nil
+            }
+            return settings.model
+        case .anthropicAPI, .openAI, .ollama:
+            return nil
+        }
+    }
+
+    static func configuredReasoningEffort() -> String? {
+        let directory = ProcessInfo.processInfo.environment["CODEX_HOME"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex", isDirectory: true)
+        let url = directory.appendingPathComponent("config.toml")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+        return codexConfiguredValue(
+            named: "model_reasoning_effort",
+            from: text
+        )
+    }
+
+    static func decodeCodexOptions(from data: Data) throws -> [AIModelOption] {
+        let catalog = try JSONDecoder().decode(CodexCatalog.self, from: data)
+        return catalog.models
+            .filter { $0.visibility == "list" }
+            .sorted { $0.priority < $1.priority }
+            .map { AIModelOption(id: $0.slug, name: $0.displayName) }
+    }
+
+    static func decodeClaudeOptions(from data: Data) throws -> [AIModelOption] {
+        let catalog = try JSONDecoder().decode(ClaudeCatalog.self, from: data)
+        return catalog.catalog.config.models.map {
+            AIModelOption(id: $0.id, name: $0.name)
+        }
+    }
+
+    static func codexConfiguredModel(from text: String) -> String? {
+        codexConfiguredValue(named: "model", from: text)
+    }
+
+    private static func codexConfiguredValue(
+        named key: String,
+        from text: String
+    ) -> String? {
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix(key) else { continue }
+            let parts = trimmed.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2,
+                  parts[0].trimmingCharacters(in: .whitespaces) == key else {
+                continue
+            }
+            return parts[1]
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        }
+        return nil
+    }
+}
+
+private struct CodexCatalog: Decodable {
+    struct Model: Decodable {
+        let slug: String
+        let displayName: String
+        let visibility: String
+        let priority: Int
+
+        enum CodingKeys: String, CodingKey {
+            case slug, visibility, priority
+            case displayName = "display_name"
+        }
+    }
+
+    let models: [Model]
+}
+
+private struct ClaudeCatalog: Decodable {
+    struct Catalog: Decodable {
+        struct Config: Decodable {
+            struct Model: Decodable {
+                let id: String
+                let name: String
+            }
+
+            let models: [Model]
+        }
+
+        let config: Config
+    }
+
+    let catalog: Catalog
+}
+
+private struct ClaudeSettings: Decodable {
+    let model: String?
 }
 
 private struct AnthropicModels: Decodable {

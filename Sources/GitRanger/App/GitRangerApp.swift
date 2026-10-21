@@ -25,6 +25,7 @@ extension Bundle {
 @main
 struct GitRangerApp: App {
     @State private var pollService = PollService()
+    @State private var routineEngine = RoutineEngine()
 
     private static let appVersion: String = {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -61,7 +62,14 @@ struct GitRangerApp: App {
     }
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([Repo.self, Commit.self, PRReview.self, SubAgentReview.self])
+        let schema = Schema([
+            Repo.self,
+            Commit.self,
+            PRReview.self,
+            SubAgentReview.self,
+            ReviewRoutine.self,
+            RoutineRun.self
+        ])
         // Keep the legacy store name so existing installations retain their data.
         let config = ModelConfiguration(
             "GitNarrate",
@@ -77,7 +85,7 @@ struct GitRangerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(routineEngine: routineEngine)
                 .tint(GRTheme.accent)
                 .onAppear {
                     // Activate the app window (needed for SPM builds without app bundle)
@@ -92,6 +100,7 @@ struct GitRangerApp: App {
 
                     let context = sharedModelContainer.mainContext
                     pollService.start(modelContext: context)
+                    routineEngine.start(modelContext: context)
                 }
         }
         .modelContainer(sharedModelContainer)

@@ -1,9 +1,26 @@
+import SwiftData
 import XCTest
 @testable import GitRanger
 
 // MARK: - GitService Tests
 
 final class GitServiceTests: XCTestCase {
+
+    func testGitProviderDateParserAcceptsWholeSeconds() {
+        let date = GitProviderDateParser.parse("2026-10-20T12:34:56Z")
+
+        XCTAssertEqual(date?.timeIntervalSince1970, 1_792_499_696)
+    }
+
+    func testGitProviderDateParserAcceptsFractionalSeconds() {
+        let date = GitProviderDateParser.parse("2026-10-20T12:34:56.789Z")
+
+        XCTAssertEqual(
+            date?.timeIntervalSince1970 ?? 0,
+            1_792_499_696.789,
+            accuracy: 0.001
+        )
+    }
 
     @MainActor
     func testShellStreamsLargeStdinWithoutBlockingMainActor() async throws {
@@ -17,6 +34,26 @@ final class GitServiceTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 0)
         XCTAssertEqual(result.stdout, input)
         XCTAssertTrue(result.stderr.isEmpty)
+    }
+
+    func testCancellingShellTaskTerminatesChildProcess() async throws {
+        let startedAt = Date()
+        let task = Task {
+            try await ShellService.shared.runDirect(
+                "/bin/sleep",
+                arguments: ["5"],
+                timeout: 10
+            )
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled shell task must throw CancellationError")
+        } catch is CancellationError {
+            XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
+        }
     }
 
     func testCloneUsesSmallBloblessHistory() {
@@ -514,6 +551,22 @@ final class AIModelsTests: XCTestCase {
 // MARK: - PromptBuilder Tests
 
 final class PromptBuilderTests: XCTestCase {
+    func testSubAgentPromptIncludesReviewTimeBudget() {
+        let prompt = PromptBuilder.buildSubAgentPrompt(
+            agent: .security,
+            input: PromptBuilder.PRReviewInput(
+                prTitle: "Harden sessions",
+                prBody: "Validate session ownership",
+                prAuthor: "author",
+                baseBranch: "main",
+                headBranch: "secure-sessions",
+                diff: "+guard session.userID == currentUser.id"
+            )
+        )
+
+        XCTAssertTrue(prompt.contains("Complete this review within 3 minutes"))
+        XCTAssertTrue(prompt.contains("Do not scan the full repository"))
+    }
 
     func testBuildCommitPrompt() {
         let prompt = PromptBuilder.buildCommitPrompt(
@@ -637,6 +690,57 @@ final class AIServiceFactoryTests: XCTestCase {
         XCTAssertTrue(openAI.contains { $0.id == "gpt-4.1" })
         XCTAssertEqual(Set(openAI.map(\.id)).count, openAI.count)
     }
+
+    func testCodexCatalogUsesVisibleModelsInPriorityOrder() throws {
+        let data = Data("""
+        {
+          "models": [
+            {"slug":"hidden","display_name":"Hidden","visibility":"hide","priority":0},
+            {"slug":"gpt-fast","display_name":"GPT Fast","visibility":"list","priority":2},
+            {"slug":"gpt-best","display_name":"GPT Best","visibility":"list","priority":1}
+          ]
+        }
+        """.utf8)
+
+        let models = try LocalAIModelCatalog.decodeCodexOptions(from: data)
+
+        XCTAssertEqual(models.map(\.id), ["gpt-best", "gpt-fast"])
+        XCTAssertEqual(models.map(\.name), ["GPT Best", "GPT Fast"])
+    }
+
+    func testClaudeCatalogUsesExactModelIdentifiers() throws {
+        let data = Data("""
+        {
+          "catalog": {
+            "config": {
+              "models": [
+                {"id":"claude-opus-current","name":"Opus Current"},
+                {"id":"claude-sonnet-current","name":"Sonnet Current"}
+              ]
+            }
+          }
+        }
+        """.utf8)
+
+        let models = try LocalAIModelCatalog.decodeClaudeOptions(from: data)
+
+        XCTAssertEqual(
+            models.map(\.id),
+            ["claude-opus-current", "claude-sonnet-current"]
+        )
+    }
+
+    func testCodexConfiguredModelParserIgnoresReasoningSetting() {
+        let config = """
+        model = "gpt-current"
+        model_reasoning_effort = "high"
+        """
+
+        XCTAssertEqual(
+            LocalAIModelCatalog.codexConfiguredModel(from: config),
+            "gpt-current"
+        )
+    }
 }
 
 // MARK: - Pull Request Content Cache Tests
@@ -703,6 +807,49 @@ final class AIWorkCoordinatorTests: XCTestCase {
 
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<8 {
+                group.addTask {
+                    try? await coordinator.acquire()
+                    await probe.enter()
+                    try? await Task.sleep(for: .milliseconds(20))
+                    await probe.leave()
+                    await coordinator.release()
+                }
+            }
+        }
+
+        let peak = await probe.peak
+        XCTAssertEqual(peak, 2)
+    }
+
+    func testCancelledAIWaiterNeverStartsLater() async throws {
+        let coordinator = AIWorkCoordinator(maxConcurrentJobs: 1)
+        try await coordinator.acquire()
+
+        let waiting = Task {
+            try await coordinator.acquire()
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        waiting.cancel()
+        await coordinator.release()
+
+        do {
+            try await waiting.value
+            await coordinator.release()
+            XCTFail("A cancelled waiter must not acquire a later slot")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        try await coordinator.acquire()
+        await coordinator.release()
+    }
+
+    func testRoutineCoordinatorCapsConcurrentPullRequests() async {
+        let coordinator = RoutineExecutionCoordinator(maxConcurrentRuns: 2)
+        let probe = ConcurrencyProbe()
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<6 {
                 group.addTask {
                     await coordinator.acquire()
                     await probe.enter()
@@ -803,6 +950,327 @@ final class PRReviewSessionStoreTests: XCTestCase {
             deletions: 0,
             changedFiles: 1,
             url: "https://example.com/repo/pull/\(number)",
+            isDraft: false,
+            reviewDecision: "",
+            reviewRequests: [],
+            latestReviews: []
+        )
+    }
+}
+
+// MARK: - Review Routine Tests
+
+final class ReviewRoutineTests: XCTestCase {
+    func testBatchResponseIsSplitIntoAgentResults() {
+        let response = """
+        <<<GITRANGER_AGENT:summary>>>
+        VERDICT: PASS
+        Clear summary.
+        <<<GITRANGER_END_AGENT>>>
+        <<<GITRANGER_AGENT:security>>>
+        VERDICT: FAIL
+        Missing authorization check.
+        <<<GITRANGER_END_AGENT>>>
+        """
+
+        let sections = RoutineReviewPipeline.parseBatchSections(
+            response,
+            agentIDs: ["summary", "security", "performance"]
+        )
+
+        XCTAssertEqual(
+            sections["summary"],
+            "VERDICT: PASS\nClear summary."
+        )
+        XCTAssertEqual(
+            sections["security"],
+            "VERDICT: FAIL\nMissing authorization check."
+        )
+        XCTAssertNil(sections["performance"])
+    }
+
+    func testQuickReviewCommentReportsReasoningEffort() {
+        let request = RoutinePipelineRequest(
+            routineID: UUID(),
+            repository: RoutineRepositoryContext(
+                id: UUID(),
+                name: "Example",
+                url: "https://github.com/example/repo",
+                localPath: "/tmp/example",
+                githubAccount: nil,
+                gitlabHost: nil,
+                agentPrompts: [:],
+                customAgents: []
+            ),
+            pullRequest: makePullRequest(sha: "abc123"),
+            agentIDs: [ReviewAgent.summary.rawValue],
+            provider: .codexCLI,
+            modelName: "test-model"
+        )
+        let agent = RoutineAgentSnapshot(
+            id: ReviewAgent.summary.rawValue,
+            name: ReviewAgent.summary.displayName,
+            status: .completed,
+            phase: "Review complete",
+            providerName: "Codex CLI (Local)",
+            modelName: "test-model",
+            reasoningEffort: "low",
+            reviewText: "VERDICT: PASS\nLooks good."
+        )
+
+        let comment = RoutineReviewPipeline.buildComment(
+            request: request,
+            agents: [agent]
+        )
+
+        XCTAssertTrue(comment.contains("AI Code Review Summary"))
+        XCTAssertTrue(comment.contains("**Mode:** Quick review"))
+        XCTAssertTrue(comment.contains("test-model · effort: low"))
+    }
+
+    func testScheduleAdvancesFromRunDate() {
+        let routine = ReviewRoutine(
+            name: "Review open PRs",
+            repoIDs: [UUID()],
+            intervalMinutes: 15
+        )
+        let runDate = Date(timeIntervalSince1970: 1_000)
+
+        routine.markScheduled(from: runDate)
+
+        XCTAssertEqual(routine.lastRunAt, runDate)
+        XCTAssertEqual(
+            routine.nextRunAt,
+            runDate.addingTimeInterval(15 * 60)
+        )
+    }
+
+    @MainActor
+    func testEditingRoutineUpdatesExistingRecord() throws {
+        let schema = Schema([ReviewRoutine.self, RoutineRun.self])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true
+        )
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [configuration]
+        )
+        let routine = ReviewRoutine(
+            name: "Original",
+            repoIDs: [UUID()],
+            intervalMinutes: 15
+        )
+        container.mainContext.insert(routine)
+        try container.mainContext.save()
+
+        let engine = RoutineEngine()
+        engine.modelContext = container.mainContext
+        engine.loadPersistedState()
+        engine.save(RoutineDraft(
+            id: routine.id,
+            name: "Updated",
+            repoIDs: routine.repoIDs,
+            intervalMinutes: 5,
+            maxPullRequestsPerRun: 2,
+            scope: .open,
+            skipDrafts: true,
+            agentIDs: [ReviewAgent.summary.rawValue],
+            provider: .codexCLI,
+            modelName: "test-model",
+            publishingMode: .automaticComment,
+            isEnabled: true
+        ))
+
+        XCTAssertEqual(engine.routines.count, 1)
+        XCTAssertEqual(engine.routines.first?.id, routine.id)
+        XCTAssertEqual(engine.routines.first?.name, "Updated")
+        XCTAssertEqual(engine.routines.first?.intervalMinutes, 5)
+        XCTAssertEqual(engine.routines.first?.maxPullRequestsPerRun, 2)
+    }
+
+    func testPublicationMarkerIsStablePerRoutineAndHead() {
+        let routineID = UUID()
+        let first = RoutinePublicationMarker.value(
+            routineID: routineID,
+            headSHA: "abc123"
+        )
+        let repeated = RoutinePublicationMarker.value(
+            routineID: routineID,
+            headSHA: "abc123"
+        )
+        let changedHead = RoutinePublicationMarker.value(
+            routineID: routineID,
+            headSHA: "def456"
+        )
+
+        XCTAssertEqual(first, repeated)
+        XCTAssertNotEqual(first, changedHead)
+        XCTAssertTrue(first.hasPrefix("<!-- gitranger:routine="))
+    }
+
+    func testCompletedHeadIsDeduplicatedAndFailedHeadCanRetry() {
+        let routine = makeRoutine()
+        let repo = makeRepo()
+        let pullRequest = makePullRequest(sha: "head-one")
+        let run = RoutineRun(
+            routine: routine,
+            repo: repo,
+            pullRequest: pullRequest,
+            trigger: .schedule
+        )
+        run.status = .completed
+
+        XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(
+            run.identity,
+            existingRuns: [run]
+        ))
+
+        run.status = .failed
+        XCTAssertTrue(RoutineRunPolicy.shouldEnqueue(
+            run.identity,
+            existingRuns: [run]
+        ))
+
+        let changedIdentity = RoutineRunIdentity(
+            routineID: routine.id,
+            repoURL: repo.url,
+            prNumber: pullRequest.number,
+            headSHA: "head-two"
+        )
+        run.status = .posted
+        XCTAssertTrue(RoutineRunPolicy.shouldEnqueue(
+            changedIdentity,
+            existingRuns: [run]
+        ))
+    }
+
+    func testRunPersistsAgentActivitySnapshots() {
+        let pullRequest = makePullRequest(sha: "abc")
+        let run = RoutineRun(
+            routine: makeRoutine(),
+            repo: makeRepo(),
+            pullRequest: pullRequest,
+            trigger: .manual
+        )
+        let snapshot = RoutineAgentSnapshot(
+            id: ReviewAgent.security.rawValue,
+            name: ReviewAgent.security.displayName,
+            status: .reviewing,
+            phase: "Reviewing pull request",
+            providerName: "Test provider",
+            modelName: "test-model",
+            startedAt: Date()
+        )
+
+        run.agentSnapshots = [snapshot]
+
+        XCTAssertEqual(run.agentSnapshots, [snapshot])
+        XCTAssertEqual(run.prAuthorLogin, "author")
+        XCTAssertEqual(run.prCreatedAt, pullRequest.createdAt)
+    }
+
+    func testProviderModelOverridesAreReported() {
+        XCTAssertEqual(
+            ClaudeCodeService(modelOverride: "opus").modelName,
+            "opus"
+        )
+        XCTAssertEqual(
+            CodexCLIService(modelOverride: "gpt-test").modelName,
+            "gpt-test"
+        )
+    }
+
+    func testRoutineFailureSummarySurfacesProviderError() {
+        let failed = RoutineAgentSnapshot(
+            id: ReviewAgent.summary.rawValue,
+            name: ReviewAgent.summary.displayName,
+            status: .failed,
+            phase: "Review failed",
+            providerName: "Local provider",
+            modelName: "test-model",
+            error: "Authentication is required."
+        )
+        let output = RoutinePipelineOutput(agents: [failed], comment: "")
+
+        XCTAssertEqual(
+            output.failureSummary,
+            "1 review agent(s) failed: Authentication is required."
+        )
+    }
+
+    func testCancellingRunClearsActiveAgentStates() {
+        let completed = RoutineAgentSnapshot(
+            id: "completed",
+            name: "Completed",
+            status: .completed,
+            phase: "Review complete"
+        )
+        let reviewing = RoutineAgentSnapshot(
+            id: "reviewing",
+            name: "Reviewing",
+            status: .reviewing,
+            phase: "Reviewing pull request"
+        )
+        let queued = RoutineAgentSnapshot(
+            id: "queued",
+            name: "Queued",
+            status: .queued,
+            phase: "Waiting"
+        )
+
+        let result = [completed, reviewing, queued].cancellingActiveAgents()
+
+        XCTAssertEqual(result[0].status, .completed)
+        XCTAssertEqual(result[1].status, .cancelled)
+        XCTAssertEqual(result[2].status, .cancelled)
+        XCTAssertNotNil(result[1].completedAt)
+        XCTAssertNotNil(result[2].completedAt)
+    }
+
+    func testIncompleteAgentPreventsPublication() {
+        let queued = RoutineAgentSnapshot(
+            id: "queued",
+            name: "Queued",
+            status: .queued,
+            phase: "Waiting"
+        )
+        let output = RoutinePipelineOutput(agents: [queued], comment: "")
+
+        XCTAssertTrue(output.hasFailures)
+        XCTAssertEqual(
+            output.failureSummary,
+            "1 review agent(s) did not complete. Nothing was posted."
+        )
+    }
+
+    private func makeRoutine() -> ReviewRoutine {
+        ReviewRoutine(name: "Routine", repoIDs: [UUID()])
+    }
+
+    private func makeRepo() -> Repo {
+        Repo(
+            name: "Example",
+            url: "https://github.com/example/repo",
+            localPath: "/tmp/example"
+        )
+    }
+
+    private func makePullRequest(sha: String) -> PullRequest {
+        PullRequest(
+            number: 42,
+            title: "Improve review automation",
+            authorLogin: "author",
+            state: "OPEN",
+            headRefName: "feature",
+            headRefOid: sha,
+            baseRefName: "main",
+            createdAt: Date(),
+            updatedAt: Date(),
+            additions: 10,
+            deletions: 2,
+            changedFiles: 2,
+            url: "https://github.com/example/repo/pull/42",
             isDraft: false,
             reviewDecision: "",
             reviewRequests: [],

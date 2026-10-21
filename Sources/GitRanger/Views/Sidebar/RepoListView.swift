@@ -2,6 +2,10 @@ import SwiftUI
 
 struct RepoListView: View {
     @Bindable var viewModel: RepoListViewModel
+    let isRoutinesSelected: Bool
+    let activeRoutineRunCount: Int
+    let onSelectRoutines: () -> Void
+    let onSelectRepository: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("aiProvider") private var aiProvider = AIProvider.claudeCode.rawValue
     @AppStorage("pollInterval") private var pollInterval = 300
@@ -11,6 +15,8 @@ struct RepoListView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+
+            routinesRow
 
             ScrollView {
                 LazyVStack(spacing: 2) {
@@ -91,10 +97,56 @@ struct RepoListView: View {
         .padding(.bottom, 10)
     }
 
+    private var routinesRow: some View {
+        Button {
+            onSelectRoutines()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "clock.arrow.2.circlepath")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isRoutinesSelected ? GRTheme.onAccent : .secondary)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        isRoutinesSelected ? GRTheme.accent : GRTheme.segment(colorScheme)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Routines")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Review automation")
+                        .font(.system(size: 10))
+                        .foregroundStyle(GRTheme.muted(colorScheme))
+                }
+                Spacer()
+                if activeRoutineRunCount > 0 {
+                    Text("\(activeRoutineRunCount)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(GRTheme.onAccent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(GRTheme.accent)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+            .background(
+                isRoutinesSelected ? GRTheme.selection(colorScheme) : .clear
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+
     private func repoRow(_ repo: Repo) -> some View {
         let isSelected = viewModel.selectedRepoId == repo.id
 
         return Button {
+            onSelectRepository()
             viewModel.selectedRepoId = repo.id
         } label: {
             HStack(spacing: 10) {

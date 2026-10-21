@@ -25,6 +25,13 @@ final class ShellService: @unchecked Sendable {
         let stdinData: Data?
     }
 
+    private struct ProcessLaunchOptions {
+        let timeout: TimeInterval
+        let directExec: Bool
+        let stderrHandler: (@Sendable (String) -> Void)?
+        let controller: ProcessCancellationController
+    }
+
     func run(
         _ executable: String,
         arguments: [String] = [],
@@ -110,27 +117,34 @@ final class ShellService: @unchecked Sendable {
         directExec: Bool = false,
         stderrHandler: (@Sendable (String) -> Void)? = nil
     ) async throws -> ShellResult {
-        try await withCheckedThrowingContinuation { continuation in
-            // Process setup and launch can perform synchronous filesystem and
-            // IPC work. Keep all of it away from the caller's actor (usually
-            // MainActor for UI-driven commands).
-            processQueue.async { [self] in
-                launchProcess(
-                    config: config,
-                    timeout: timeout,
-                    directExec: directExec,
-                    stderrHandler: stderrHandler,
-                    continuation: continuation
-                )
+        let controller = ProcessCancellationController()
+        let result = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Process setup and launch can perform synchronous filesystem
+                // and IPC work. Keep it away from the caller's actor.
+                processQueue.async { [self] in
+                    launchProcess(
+                        config: config,
+                        options: ProcessLaunchOptions(
+                            timeout: timeout,
+                            directExec: directExec,
+                            stderrHandler: stderrHandler,
+                            controller: controller
+                        ),
+                        continuation: continuation
+                    )
+                }
             }
+        } onCancel: {
+            controller.cancel()
         }
+        try Task.checkCancellation()
+        return result
     }
 
     private func launchProcess(
         config: ProcessConfig,
-        timeout: TimeInterval,
-        directExec: Bool,
-        stderrHandler: (@Sendable (String) -> Void)?,
+        options: ProcessLaunchOptions,
         continuation: CheckedContinuation<ShellResult, Error>
     ) {
         let process = Process()
@@ -139,11 +153,14 @@ final class ShellService: @unchecked Sendable {
             process,
             config: config,
             processIO: processIO,
-            directExec: directExec
+            directExec: options.directExec
         )
-        processIO.beginReading(stderrHandler: stderrHandler)
+        processIO.beginReading(stderrHandler: options.stderrHandler)
 
-        let timeoutItem = scheduleTimeout(for: process, after: timeout)
+        let timeoutItem = scheduleTimeout(
+            for: process,
+            after: options.timeout
+        )
         process.terminationHandler = { _ in
             timeoutItem.cancel()
             processIO.finishReading()
@@ -155,7 +172,7 @@ final class ShellService: @unchecked Sendable {
         }
 
         do {
-            try process.run()
+            try options.controller.launch(process)
             streamInput(config.stdinData, to: processIO)
         } catch {
             timeoutItem.cancel()
@@ -214,6 +231,31 @@ final class ShellService: @unchecked Sendable {
         return timeoutItem
     }
 
+}
+
+/// Connects structured-concurrency cancellation to Foundation's Process.
+/// Without this bridge a cancelled review leaves its CLI running and can later
+/// consume a coordinator slot or provider quota.
+private final class ProcessCancellationController: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var isCancelled = false
+
+    func launch(_ process: Process) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isCancelled else { throw CancellationError() }
+        self.process = process
+        try process.run()
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let runningProcess = process?.isRunning == true ? process : nil
+        lock.unlock()
+        runningProcess?.terminate()
+    }
 }
 
 /// Owns a child process's pipes and drains them without blocking its caller.

@@ -4,11 +4,29 @@ final class CodexCLIService: AIServiceProtocol {
     let displayName = "Codex CLI (Local)"
     let requiresAPIKey = false
     var modelName: String {
+        if let modelOverride, !modelOverride.isEmpty { return modelOverride }
         let selected = UserDefaults.standard.string(forKey: "codexModel") ?? ""
-        return selected.isEmpty ? "Provider default" : selected
+        guard selected.isEmpty else { return selected }
+        return LocalAIModelCatalog.configuredModel(for: .codexCLI)
+            ?? "CLI default"
+    }
+    var reasoningEffort: String {
+        reasoningEffortOverride
+            ?? LocalAIModelCatalog.configuredReasoningEffort()
+            ?? "provider default"
     }
 
     private let shell = ShellService.shared
+    private let modelOverride: String?
+    private let reasoningEffortOverride: String?
+
+    init(
+        modelOverride: String? = nil,
+        reasoningEffortOverride: String? = nil
+    ) {
+        self.modelOverride = modelOverride
+        self.reasoningEffortOverride = reasoningEffortOverride
+    }
 
     private enum ExecutableResolution {
         case available(String)
@@ -96,11 +114,19 @@ final class CodexCLIService: AIServiceProtocol {
     }
 
     func generate(prompt: String, repoPath: URL?) async throws -> String {
+        try await generate(prompt: prompt, repoPath: repoPath, timeout: 300)
+    }
+
+    func generate(
+        prompt: String,
+        repoPath: URL?,
+        timeout: TimeInterval
+    ) async throws -> String {
         try await runCodex(
             binary: try await executablePath(),
             prompt: prompt,
             repoPath: configuredRepoPath(repoPath),
-            timeout: 300
+            timeout: timeout
         )
     }
 
@@ -149,7 +175,8 @@ final class CodexCLIService: AIServiceProtocol {
         guard result.exitCode == 0 else {
             if result.exitCode == 15 {
                 throw AIError.providerError(
-                    "Request timed out. Try selecting fewer commits."
+                    "Codex CLI exceeded the \(Int(timeout / 60))-minute "
+                        + "timeout. Retry this agent or reduce the PR scope."
                 )
             }
             throw AIError.providerError(Self.errorMessage(from: result))
@@ -172,9 +199,17 @@ final class CodexCLIService: AIServiceProtocol {
             "--output-last-message", outputURL.path
         ]
 
-        let model = UserDefaults.standard.string(forKey: "codexModel") ?? ""
+        let model = modelOverride
+            ?? UserDefaults.standard.string(forKey: "codexModel")
+            ?? ""
         if !model.isEmpty {
             result += ["--model", model]
+        }
+        if let reasoningEffortOverride {
+            result += [
+                "--config",
+                "model_reasoning_effort=\"\(reasoningEffortOverride)\""
+            ]
         }
 
         if let repoPath {

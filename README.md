@@ -64,6 +64,14 @@ Select 2–20 commits and get a concise summary with bullet points of key change
 
 GitRanger polls your repositories on a configurable interval (1 min to 1 hour) and sends native macOS notifications when new commits arrive. A menu bar icon keeps you informed at a glance.
 
+### Automated Review Routines
+
+Create persistent routines that poll one or more repositories and review new PR heads with the agents you choose. Each routine can use the global AI provider or override its provider and model, skip drafts, limit the number of PRs processed per run, and either keep results as a preview or post one consolidated comment automatically.
+
+The **Agent Activity** dashboard shows every queued and active review, its current phase, provider, model, elapsed time, result, and error state. Runs are deduplicated by routine, repository, PR number, and head SHA, with an additional hidden marker in posted comments to prevent duplicate delivery.
+
+Routines run while GitRanger is open, including when it is operating from the menu bar. Automatic routines only post comments; they never approve or merge a pull request.
+
 ---
 
 ## AI Providers

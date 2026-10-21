@@ -1023,6 +1023,38 @@ gitranger/
 
 ---
 
+## Automated PR Review Routines
+
+Review routines are persistent, app-level automations. They poll GitHub or GitLab,
+select eligible pull requests, run the configured review agents, and optionally
+publish one combined comment.
+
+The routine subsystem is split into four responsibilities:
+
+- `RoutineEngine` schedules discovery, persists runs, limits active PR work, and
+  recovers interrupted runs.
+- `RoutineReviewPipeline` loads immutable PR content, runs agents with bounded
+  concurrency, and emits operational activity events.
+- `RoutineReviewPublisher` checks a remote publication marker before posting a
+  GitHub comment or GitLab note.
+- `AIWorkCoordinator` remains the global FIFO limit for expensive provider work,
+  including manual reviews and routines.
+
+The idempotency identity is `(routine ID, repository URL, PR number, head SHA)`.
+A new head SHA creates a new run. Completed or posted identities are skipped,
+while failed and cancelled identities can be retried. Automatic comments include
+an invisible routine/head marker so a lost local database does not immediately
+produce a duplicate comment.
+
+SwiftData stores `ReviewRoutine` configuration and `RoutineRun` activity history.
+Each run contains serializable agent snapshots with status, phase, provider,
+model, verdict, output, timing, and errors. The SwiftUI dashboard observes these
+snapshots but does not own the execution lifetime.
+
+Schedules currently execute while the macOS application process is alive,
+including menu bar operation. Running after the application is fully terminated
+would require a separately managed launch agent or helper process.
+
 ## Roadmap
 
 ### v1.0 — MVP

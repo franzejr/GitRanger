@@ -97,7 +97,8 @@ extension PRReviewViewModel {
                 reviewText: result,
                 providerName: provider.displayName,
                 reviewerName: agent.displayName,
-                modelName: provider.modelName
+                modelName: provider.modelName,
+                reasoningEffort: provider.reasoningEffort
             ))
         } catch {
             agentErrors[agent] = error.localizedDescription
@@ -145,7 +146,8 @@ extension PRReviewViewModel {
                 reviewText: result,
                 providerName: provider.displayName,
                 reviewerName: customAgent.name,
-                modelName: provider.modelName
+                modelName: provider.modelName,
+                reasoningEffort: provider.reasoningEffort
             ))
         } catch {
             customAgentErrors[agentId] = error.localizedDescription
@@ -356,7 +358,8 @@ extension PRReviewViewModel {
                 reviewText: text,
                 providerName: ctx.provider.displayName,
                 reviewerName: agent.displayName,
-                modelName: ctx.provider.modelName
+                modelName: ctx.provider.modelName,
+                reasoningEffort: ctx.provider.reasoningEffort
             ))
         case .failure(let error):
             agentErrors[agent] = error.localizedDescription
@@ -388,7 +391,8 @@ extension PRReviewViewModel {
                 reviewText: text,
                 providerName: ctx.provider.displayName,
                 reviewerName: reviewerName,
-                modelName: ctx.provider.modelName
+                modelName: ctx.provider.modelName,
+                reasoningEffort: ctx.provider.reasoningEffort
             ))
         case .failure(let error):
             customAgentErrors[agentId] = error.localizedDescription
@@ -403,6 +407,7 @@ extension PRReviewViewModel {
             reviewerName: reviewerName,
             providerName: provider.displayName,
             modelName: provider.modelName,
+            reasoningEffort: provider.reasoningEffort,
             reviewedAt: Date()
         )
     }

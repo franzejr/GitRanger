@@ -13,6 +13,7 @@ final class SubAgentReview {
     var providerName: String
     var reviewerName: String?
     var modelName: String?
+    var reasoningEffort: String?
 
     init(
         repoUrl: String,
@@ -22,7 +23,8 @@ final class SubAgentReview {
         reviewText: String,
         providerName: String,
         reviewerName: String? = nil,
-        modelName: String? = nil
+        modelName: String? = nil,
+        reasoningEffort: String? = nil
     ) {
         self.id = UUID()
         self.repoUrl = repoUrl
@@ -34,5 +36,6 @@ final class SubAgentReview {
         self.providerName = providerName
         self.reviewerName = reviewerName
         self.modelName = modelName
+        self.reasoningEffort = reasoningEffort
     }
 }

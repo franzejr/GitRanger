@@ -69,19 +69,30 @@ extension PRReviewViewModel {
 
     /// Build a formatted summary from all completed agent reviews.
     func buildReviewSummary() -> String {
-        var parts = ["## AI Code Review Summary", ""]
+        let agentCount = agentReviews.count + customAgentReviews.count
+        var parts = ReviewCommentFormatter.header(
+            mode: "Interactive review",
+            agentCount: agentCount,
+            headSHA: selectedPR?.headRefOid ?? "unknown"
+        )
 
         for agent in ReviewAgent.allCases {
             guard let text = agentReviews[agent] else { continue }
             let verdict = agentVerdicts[agent]
             let icon = verdict == true ? "✅" : (verdict == false ? "⚠️" : "📝")
             parts.append("### \(icon) \(agent.displayName)")
+            if let metadata = agentMetadata[agent] {
+                parts.append(Self.commentMetadata(metadata))
+            }
             parts.append(Self.stripVerdictLine(text))
             parts.append("")
 
             if let deepText = agentDeepReviews[agent] {
                 let deepIcon = agentDeepVerdicts[agent] == true ? "✅" : "⚠️"
                 parts.append("#### \(deepIcon) Verification")
+                if let metadata = agentDeepMetadata[agent] {
+                    parts.append(Self.commentMetadata(metadata))
+                }
                 parts.append(Self.stripVerdictLine(deepText))
                 parts.append("")
             }
@@ -90,13 +101,27 @@ extension PRReviewViewModel {
         for agent in customAgentReviews {
             let verdict = customAgentVerdicts[agent.key]
             let icon = verdict == true ? "✅" : (verdict == false ? "⚠️" : "📝")
-            parts.append("### \(icon) \(agent.key)")
+            let metadata = customAgentMetadata[agent.key]
+            parts.append("### \(icon) \(metadata?.reviewerName ?? agent.key)")
+            if let metadata {
+                parts.append(Self.commentMetadata(metadata))
+            }
             parts.append(Self.stripVerdictLine(agent.value))
             parts.append("")
         }
 
         return parts.joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func commentMetadata(
+        _ metadata: ReviewRunMetadata
+    ) -> String {
+        ReviewCommentFormatter.metadata(
+            provider: metadata.providerName,
+            model: metadata.modelName,
+            reasoningEffort: metadata.reasoningEffort
+        )
     }
 
     func postReviewAsComment(repo: Repo) async {

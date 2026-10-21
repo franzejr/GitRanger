@@ -163,6 +163,11 @@ enum PromptBuilder {
         return """
         \(baseInstructions)
 
+        TIME BUDGET: Complete this review within 3 minutes. Start with the supplied diff. \
+        Do not scan the full repository or run broad searches. Inspect additional files only \
+        when needed to verify a specific finding. Prefer a concise, high-confidence review \
+        over exhaustive exploration, and return your best useful result before the deadline.
+
         IMPORTANT: Begin your response with exactly "VERDICT: PASS" if you find no significant \
         issues, or "VERDICT: FAIL" if you find issues that should be addressed. \
         Put this on the very first line, then continue with your review below.
@@ -188,6 +193,11 @@ enum PromptBuilder {
 
         return """
         \(customAgent.prompt)
+
+        TIME BUDGET: Complete this review within 3 minutes. Start with the supplied diff. \
+        Do not scan the full repository or run broad searches. Inspect additional files only \
+        when needed to verify a specific finding. Prefer a concise, high-confidence review \
+        over exhaustive exploration, and return your best useful result before the deadline.
 
         IMPORTANT: Begin your response with exactly "VERDICT: PASS" if you find no significant \
         issues, or "VERDICT: FAIL" if you find issues that should be addressed. \

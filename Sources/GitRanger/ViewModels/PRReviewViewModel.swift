@@ -149,6 +149,7 @@ final class PRReviewViewModel {
                     reviewerName: "General review",
                     providerName: cached.providerName,
                     modelName: cached.modelName ?? "Unknown model",
+                    reasoningEffort: cached.reasoningEffort ?? "not recorded",
                     reviewedAt: cached.reviewedAt
                 )
             }
@@ -221,6 +222,7 @@ final class PRReviewViewModel {
                 reviewerName: "General review",
                 providerName: provider.displayName,
                 modelName: provider.modelName,
+                reasoningEffort: provider.reasoningEffort,
                 reviewedAt: Date()
             )
             saveReview(.init(
@@ -229,7 +231,8 @@ final class PRReviewViewModel {
                 headSha: pr.headRefOid,
                 reviewText: result,
                 providerName: provider.displayName,
-                modelName: provider.modelName
+                modelName: provider.modelName,
+                reasoningEffort: provider.reasoningEffort
             ))
         } catch {
             self.error = error.localizedDescription

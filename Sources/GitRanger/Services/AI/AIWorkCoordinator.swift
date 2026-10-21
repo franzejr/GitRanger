@@ -11,20 +11,39 @@ actor AIWorkCoordinator {
 
     let maxConcurrentJobs: Int
     private var activeJobs = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    private var waiters: [Waiter] = []
 
     init(maxConcurrentJobs: Int) {
         self.maxConcurrentJobs = max(1, maxConcurrentJobs)
     }
 
-    func acquire() async {
-        if activeJobs < maxConcurrentJobs {
-            activeJobs += 1
-            return
+    func acquire() async throws {
+        try Task.checkCancellation()
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            let _: Void = try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if activeJobs < maxConcurrentJobs {
+                    activeJobs += 1
+                    continuation.resume()
+                } else {
+                    waiters.append(Waiter(
+                        id: waiterID,
+                        continuation: continuation
+                    ))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(waiterID) }
         }
-
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        if Task.isCancelled {
+            release()
+            throw CancellationError()
         }
     }
 
@@ -33,8 +52,17 @@ actor AIWorkCoordinator {
             activeJobs = max(0, activeJobs - 1)
         } else {
             // The released slot is transferred directly to the next FIFO job.
-            waiters.removeFirst().resume()
+            waiters.removeFirst().continuation.resume()
         }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        waiters.remove(at: index).continuation.resume(
+            throwing: CancellationError()
+        )
     }
 }
 
@@ -54,6 +82,7 @@ final class CoordinatedAIService: AIServiceProtocol {
 
     var displayName: String { base.displayName }
     var modelName: String { base.modelName }
+    var reasoningEffort: String { base.reasoningEffort }
     var requiresAPIKey: Bool { base.requiresAPIKey }
 
     func isAvailable() async -> Bool {
@@ -69,8 +98,9 @@ final class CoordinatedAIService: AIServiceProtocol {
         diff: String,
         repoPath: URL?
     ) async throws -> CommitSummary {
-        await coordinator.acquire()
+        try await coordinator.acquire()
         do {
+            try Task.checkCancellation()
             let result = try await base.summarize(
                 commitMessage: commitMessage,
                 diff: diff,
@@ -85,12 +115,42 @@ final class CoordinatedAIService: AIServiceProtocol {
     }
 
     func generate(prompt: String, repoPath: URL?) async throws -> String {
-        await coordinator.acquire()
+        try await performGenerate(
+            prompt: prompt,
+            repoPath: repoPath,
+            timeout: nil
+        )
+    }
+
+    func generate(
+        prompt: String,
+        repoPath: URL?,
+        timeout: TimeInterval
+    ) async throws -> String {
+        try await performGenerate(
+            prompt: prompt,
+            repoPath: repoPath,
+            timeout: timeout
+        )
+    }
+
+    private func performGenerate(
+        prompt: String,
+        repoPath: URL?,
+        timeout: TimeInterval?
+    ) async throws -> String {
+        try await coordinator.acquire()
         do {
-            let result = try await base.generate(
-                prompt: prompt,
-                repoPath: repoPath
-            )
+            try Task.checkCancellation()
+            let result = if let timeout {
+                try await base.generate(
+                    prompt: prompt,
+                    repoPath: repoPath,
+                    timeout: timeout
+                )
+            } else {
+                try await base.generate(prompt: prompt, repoPath: repoPath)
+            }
             await coordinator.release()
             return result
         } catch {

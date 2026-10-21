@@ -11,6 +11,7 @@ extension PRReviewViewModel {
         let reviewText: String
         let providerName: String
         let modelName: String
+        let reasoningEffort: String
     }
 
     struct SubAgentCacheKey {
@@ -22,6 +23,7 @@ extension PRReviewViewModel {
         let providerName: String
         let reviewerName: String
         let modelName: String
+        let reasoningEffort: String
     }
 
     func findCachedReview(
@@ -64,7 +66,8 @@ extension PRReviewViewModel {
             headSha: key.headSha,
             reviewText: key.reviewText,
             providerName: key.providerName,
-            modelName: key.modelName
+            modelName: key.modelName,
+            reasoningEffort: key.reasoningEffort
         )
         modelContext.insert(review)
         try? modelContext.save()
@@ -145,7 +148,8 @@ extension PRReviewViewModel {
             reviewText: key.reviewText,
             providerName: key.providerName,
             reviewerName: key.reviewerName,
-            modelName: key.modelName
+            modelName: key.modelName,
+            reasoningEffort: key.reasoningEffort
         )
         modelContext.insert(review)
         try? modelContext.save()
@@ -159,6 +163,7 @@ extension PRReviewViewModel {
             reviewerName: review.reviewerName ?? fallbackReviewer,
             providerName: review.providerName,
             modelName: review.modelName ?? "Unknown model",
+            reasoningEffort: review.reasoningEffort ?? "not recorded",
             reviewedAt: review.reviewedAt
         )
     }

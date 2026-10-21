@@ -255,6 +255,49 @@ final class GitHubService {
         )
     }
 
+    func hasPRComment(
+        repoUrl: String,
+        prNumber: Int,
+        containing marker: String,
+        account: String? = nil
+    ) async throws -> Bool {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        let output = try await runGhOrThrow(
+            arguments: [
+                "api", "repos/\(slug)/issues/\(prNumber)/comments",
+                "--paginate", "--jq", ".[].body"
+            ],
+            environment: env,
+            timeout: 30
+        )
+        return output.contains(marker)
+    }
+
+    func postPRComment(
+        repoUrl: String,
+        prNumber: Int,
+        message: String,
+        account: String? = nil
+    ) async throws {
+        guard let slug = extractRepoSlug(url: repoUrl) else {
+            throw GitHubError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(account: account)
+        _ = try await runGhOrThrow(
+            arguments: [
+                "pr", "comment", "\(prNumber)", "-R", slug,
+                "--body", message
+            ],
+            environment: env,
+            timeout: 30
+        )
+    }
+
     func requestChanges(repoUrl: String, prNumber: Int, message: String, account: String? = nil) async throws {
         guard let slug = extractRepoSlug(url: repoUrl) else {
             throw GitHubError.repoNotFound(repoUrl)
@@ -353,9 +396,6 @@ private struct PRListDTO: Codable {
     }
 
     func toPullRequest() -> PullRequest {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
         let reviews = (latestReviews ?? []).map {
             PRReviewStatus(login: $0.author.login, state: $0.state)
         }
@@ -371,8 +411,8 @@ private struct PRListDTO: Codable {
             headRefName: headRefName,
             headRefOid: headRefOid,
             baseRefName: baseRefName,
-            createdAt: formatter.date(from: createdAt) ?? Date(),
-            updatedAt: formatter.date(from: updatedAt) ?? Date(),
+            createdAt: GitProviderDateParser.parse(createdAt) ?? .distantPast,
+            updatedAt: GitProviderDateParser.parse(updatedAt) ?? .distantPast,
             additions: additions,
             deletions: deletions,
             changedFiles: changedFiles,

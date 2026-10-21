@@ -2,25 +2,33 @@ import Foundation
 
 final class AIServiceFactory {
 
-    static func create(provider: AIProvider, settings: AISettings) -> AIServiceProtocol {
+    static func create(
+        provider: AIProvider,
+        settings: AISettings,
+        modelOverride: String? = nil,
+        reasoningEffortOverride: String? = nil
+    ) -> AIServiceProtocol {
         switch provider {
         case .claudeCode:
-            ClaudeCodeService()
+            ClaudeCodeService(modelOverride: modelOverride)
         case .codexCLI:
-            CodexCLIService()
+            CodexCLIService(
+                modelOverride: modelOverride,
+                reasoningEffortOverride: reasoningEffortOverride
+            )
         case .anthropicAPI:
             AnthropicAPIService(
                 apiKey: settings.anthropicAPIKey,
-                model: settings.anthropicModel
+                model: modelOverride ?? settings.anthropicModel
             )
         case .openAI:
             OpenAIService(
                 apiKey: settings.openAIAPIKey,
-                model: settings.openAIModel
+                model: modelOverride ?? settings.openAIModel
             )
         case .ollama:
             OllamaService(
-                model: settings.ollamaModel,
+                model: modelOverride ?? settings.ollamaModel,
                 baseURL: settings.ollamaURL
             )
         }

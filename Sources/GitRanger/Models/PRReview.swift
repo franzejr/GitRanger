@@ -11,6 +11,7 @@ final class PRReview {
     var reviewedAt: Date
     var providerName: String
     var modelName: String?
+    var reasoningEffort: String?
     var secondReviewText: String?
 
     init(
@@ -19,7 +20,8 @@ final class PRReview {
         headSha: String,
         reviewText: String,
         providerName: String,
-        modelName: String? = nil
+        modelName: String? = nil,
+        reasoningEffort: String? = nil
     ) {
         self.id = UUID()
         self.repoUrl = repoUrl
@@ -29,5 +31,6 @@ final class PRReview {
         self.reviewedAt = Date()
         self.providerName = providerName
         self.modelName = modelName
+        self.reasoningEffort = reasoningEffort
     }
 }

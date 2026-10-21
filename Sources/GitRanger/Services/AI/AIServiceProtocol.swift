@@ -19,14 +19,30 @@ struct AIAvailabilityStatus: Sendable {
 protocol AIServiceProtocol {
     var displayName: String { get }
     var modelName: String { get }
+    var reasoningEffort: String { get }
     var requiresAPIKey: Bool { get }
     func isAvailable() async -> Bool
     func availabilityStatus() async -> AIAvailabilityStatus
     func summarize(commitMessage: String, diff: String, repoPath: URL?) async throws -> CommitSummary
     func generate(prompt: String, repoPath: URL?) async throws -> String
+    func generate(
+        prompt: String,
+        repoPath: URL?,
+        timeout: TimeInterval
+    ) async throws -> String
 }
 
 extension AIServiceProtocol {
+    var reasoningEffort: String { "provider default" }
+
+    func generate(
+        prompt: String,
+        repoPath: URL?,
+        timeout: TimeInterval
+    ) async throws -> String {
+        try await generate(prompt: prompt, repoPath: repoPath)
+    }
+
     func availabilityStatus() async -> AIAvailabilityStatus {
         let available = await isAvailable()
         return AIAvailabilityStatus(

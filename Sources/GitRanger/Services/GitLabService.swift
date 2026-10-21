@@ -325,6 +325,42 @@ final class GitLabService {
         }
     }
 
+    func hasMRComment(
+        repoUrl: String,
+        mrNumber: Int,
+        containing marker: String,
+        host: String? = nil
+    ) async throws -> Bool {
+        guard let slug = extractRepoSlug(url: repoUrl),
+              let project = encodedProjectPath(slug) else {
+            throw GitLabError.repoNotFound(repoUrl)
+        }
+
+        let env = await shellEnv(host: host)
+        let args = [
+            "api", "projects/\(project)/merge_requests/\(mrNumber)/notes",
+            "--paginate", "--jq", ".[].body"
+        ]
+        let result = try await runGlab(
+            arguments: args,
+            environment: env,
+            timeout: 30
+        )
+        guard result.exitCode == 0 else {
+            throw GitLabError.commandFailed(
+                describeFailure(result, arguments: args, envHint: env)
+            )
+        }
+        return result.stdout.contains(marker)
+    }
+
+    private func encodedProjectPath(_ slug: String) -> String? {
+        let allowed = CharacterSet.alphanumerics.union(
+            CharacterSet(charactersIn: "-._~")
+        )
+        return slug.addingPercentEncoding(withAllowedCharacters: allowed)
+    }
+
 }
 
 // MARK: - Private
