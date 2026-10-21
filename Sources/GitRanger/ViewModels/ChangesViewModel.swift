@@ -5,6 +5,7 @@ final class ChangesViewModel {
     var changedFiles: [ChangedFile] = []
     var selectedFile: ChangedFile?
     var fileDiff: String?
+    private(set) var fileDiffRevision = 0
     var commitSummary = ""
     var commitDescription = ""
     var isLoading = false
@@ -201,5 +202,6 @@ final class ChangesViewModel {
         } catch {
             fileDiff = nil
         }
+        fileDiffRevision &+= 1
     }
 }

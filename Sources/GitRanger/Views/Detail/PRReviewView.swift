@@ -273,7 +273,10 @@ struct PRReviewView: View {
         if let diff = viewModel.diff, !diff.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 GRSectionLabel(title: "Diff")
-                DiffView(diff: diff)
+                DiffView(
+                    diff: diff,
+                    contentID: viewModel.selectedPR?.headRefOid ?? ""
+                )
             }
         }
     }

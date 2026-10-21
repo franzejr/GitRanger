@@ -18,14 +18,15 @@ extension PRReviewViewModel {
     ) -> PRReview? {
         guard let modelContext else { return nil }
         do {
-            let allReviews = try modelContext.fetch(
-                FetchDescriptor<PRReview>()
+            var descriptor = FetchDescriptor<PRReview>(
+                predicate: #Predicate { review in
+                    review.repoUrl == repoUrl
+                        && review.prNumber == prNumber
+                        && review.headSha == headSha
+                }
             )
-            return allReviews.first {
-                $0.repoUrl == repoUrl &&
-                $0.prNumber == prNumber &&
-                $0.headSha == headSha
-            }
+            descriptor.fetchLimit = 1
+            return try modelContext.fetch(descriptor).first
         } catch {
             return nil
         }
@@ -68,15 +69,14 @@ extension PRReviewViewModel {
     ) {
         guard let modelContext else { return }
         do {
-            let allReviews = try modelContext.fetch(
-                FetchDescriptor<SubAgentReview>()
+            let descriptor = FetchDescriptor<SubAgentReview>(
+                predicate: #Predicate { review in
+                    review.repoUrl == repoUrl
+                        && review.prNumber == prNumber
+                        && review.headSha == headSha
+                }
             )
-            let matching = allReviews.filter {
-                $0.repoUrl == repoUrl &&
-                $0.prNumber == prNumber &&
-                $0.headSha == headSha
-            }
-            for cached in matching {
+            for cached in try modelContext.fetch(descriptor) {
                 loadCachedAgent(cached)
             }
         } catch { }
@@ -103,15 +103,23 @@ extension PRReviewViewModel {
 
     func saveSubAgentReview(_ key: SubAgentCacheKey) {
         guard let modelContext else { return }
+        let repoUrl = key.repoUrl
+        let prNumber = key.prNumber
+        let headSha = key.headSha
+        let agentKind = key.agentKind
 
-        let allReviews = (try? modelContext.fetch(
-            FetchDescriptor<SubAgentReview>()
+        let descriptor = FetchDescriptor<SubAgentReview>(
+            predicate: #Predicate { review in
+                review.repoUrl == repoUrl
+                    && review.prNumber == prNumber
+                    && review.headSha == headSha
+                    && review.agentKind == agentKind
+            }
+        )
+        let existingReviews = (try? modelContext.fetch(
+            descriptor
         )) ?? []
-        for existing in allReviews where
-            existing.repoUrl == key.repoUrl &&
-            existing.prNumber == key.prNumber &&
-            existing.headSha == key.headSha &&
-            existing.agentKind == key.agentKind {
+        for existing in existingReviews {
             modelContext.delete(existing)
         }
 

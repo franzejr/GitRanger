@@ -5,6 +5,20 @@ import XCTest
 
 final class GitServiceTests: XCTestCase {
 
+    @MainActor
+    func testShellStreamsLargeStdinWithoutBlockingMainActor() async throws {
+        let input = String(repeating: "GitRanger background review\n", count: 20_000)
+        let result = try await ShellService.shared.run(
+            "/bin/cat",
+            stdinData: Data(input.utf8),
+            timeout: 5
+        )
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.stdout, input)
+        XCTAssertTrue(result.stderr.isEmpty)
+    }
+
     func testCloneUsesSmallBloblessHistory() {
         let destination = URL(fileURLWithPath: "/tmp/git-ranger-test")
         let arguments = GitService.cloneArguments(

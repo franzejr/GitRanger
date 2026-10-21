@@ -33,6 +33,7 @@ struct ChangesDetailView: View {
             if let diff = viewModel.fileDiff, !diff.isEmpty {
                 DiffView(
                     diff: diff,
+                    contentID: "\(file.id):\(viewModel.fileDiffRevision)",
                     presentation: layout == .inline ? .inline : .split
                 )
                     .padding(12)

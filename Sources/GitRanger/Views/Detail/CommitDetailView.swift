@@ -141,7 +141,10 @@ struct CommitDetailView: View {
 
             if let diff = viewModel.diff, !diff.isEmpty {
                 GroupBox {
-                    DiffView(diff: diff)
+                    DiffView(
+                        diff: diff,
+                        contentID: viewModel.commit?.sha ?? ""
+                    )
                 }
             } else {
                 Text("No diff available")

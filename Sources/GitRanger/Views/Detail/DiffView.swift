@@ -7,13 +7,16 @@ enum DiffPresentation {
 
 struct DiffView: View {
     let diff: String
+    let contentID: String
     var presentation: DiffPresentation = .inline
     @Environment(\.colorScheme) private var colorScheme
+    @State private var lines: [DiffLine] = []
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: true) {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                ForEach(lines.indices, id: \.self) { index in
+                    let line = lines[index]
                     if presentation == .split,
                        line.kind != .hunk,
                        line.kind != .metadata {
@@ -32,10 +35,18 @@ struct DiffView: View {
                 .stroke(GRTheme.line(colorScheme), lineWidth: 1)
         }
         .textSelection(.enabled)
-    }
-
-    private var lines: [DiffLine] {
-        DiffParser.parse(diff)
+        // contentID is deliberately small and stable. Using the complete diff
+        // as a task identity would make SwiftUI hash megabytes of text during
+        // every unrelated view update.
+        .task(id: contentID) {
+            lines = []
+            let source = diff
+            let parsed = await Task.detached(priority: .userInitiated) {
+                DiffParser.parse(source)
+            }.value
+            guard !Task.isCancelled else { return }
+            lines = parsed
+        }
     }
 
     private func inlineRow(_ line: DiffLine) -> some View {
@@ -114,13 +125,13 @@ struct DiffView: View {
     }
 }
 
-private enum DiffSide {
+private enum DiffSide: Sendable {
     case old
     case new
 }
 
-private struct DiffLine {
-    enum Kind {
+private struct DiffLine: Sendable {
+    enum Kind: Sendable {
         case addition
         case deletion
         case hunk

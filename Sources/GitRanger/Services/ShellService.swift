@@ -1,7 +1,13 @@
 import Foundation
 
-final class ShellService {
+final class ShellService: @unchecked Sendable {
     static let shared = ShellService()
+
+    private let processQueue = DispatchQueue(
+        label: "com.gitranger.shell-process",
+        qos: .utility,
+        attributes: .concurrent
+    )
 
     private init() {}
 
@@ -105,67 +111,75 @@ final class ShellService {
         stderrHandler: (@Sendable (String) -> Void)? = nil
     ) async throws -> ShellResult {
         try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-
-            configureProcess(
-                process, config: config,
-                stdoutPipe: stdoutPipe, stderrPipe: stderrPipe,
-                directExec: directExec
-            )
-
-            // Drain stdout asynchronously to avoid pipe buffer deadlock.
-            // If the process writes more than ~64KB to stdout, the pipe buffer
-            // fills up and blocks the process from terminating.
-            let stdoutAccumulator = LockedData()
-            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty else { return }
-                stdoutAccumulator.append(data)
-            }
-
-            let stderrAccumulator = LockedData()
-            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty else { return }
-                stderrAccumulator.append(data)
-                if let handler = stderrHandler,
-                   let text = String(data: data, encoding: .utf8) {
-                    handler(text)
-                }
-            }
-
-            let timeoutItem = scheduleTimeout(for: process, after: timeout)
-
-            process.terminationHandler = { _ in
-                timeoutItem.cancel()
-                stdoutPipe.fileHandleForReading.readabilityHandler = nil
-                stderrPipe.fileHandleForReading.readabilityHandler = nil
-                let result = ShellResult(
-                    stdout: String(data: stdoutAccumulator.data, encoding: .utf8) ?? "",
-                    stderr: String(data: stderrAccumulator.data, encoding: .utf8) ?? "",
-                    exitCode: process.terminationStatus
+            // Process setup and launch can perform synchronous filesystem and
+            // IPC work. Keep all of it away from the caller's actor (usually
+            // MainActor for UI-driven commands).
+            processQueue.async { [self] in
+                launchProcess(
+                    config: config,
+                    timeout: timeout,
+                    directExec: directExec,
+                    stderrHandler: stderrHandler,
+                    continuation: continuation
                 )
-                continuation.resume(returning: result)
             }
+        }
+    }
 
-            do {
-                try process.run()
-            } catch {
-                timeoutItem.cancel()
-                stdoutPipe.fileHandleForReading.readabilityHandler = nil
-                stderrPipe.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(throwing: error)
-            }
+    private func launchProcess(
+        config: ProcessConfig,
+        timeout: TimeInterval,
+        directExec: Bool,
+        stderrHandler: (@Sendable (String) -> Void)?,
+        continuation: CheckedContinuation<ShellResult, Error>
+    ) {
+        let process = Process()
+        let processIO = ProcessIO(hasInput: config.stdinData != nil)
+        configureProcess(
+            process,
+            config: config,
+            processIO: processIO,
+            directExec: directExec
+        )
+        processIO.beginReading(stderrHandler: stderrHandler)
+
+        let timeoutItem = scheduleTimeout(for: process, after: timeout)
+        process.terminationHandler = { _ in
+            timeoutItem.cancel()
+            processIO.finishReading()
+            continuation.resume(returning: ShellResult(
+                stdout: processIO.stdout,
+                stderr: processIO.stderr,
+                exitCode: process.terminationStatus
+            ))
+        }
+
+        do {
+            try process.run()
+            streamInput(config.stdinData, to: processIO)
+        } catch {
+            timeoutItem.cancel()
+            processIO.close()
+            continuation.resume(throwing: error)
+        }
+    }
+
+    private func streamInput(_ data: Data?, to processIO: ProcessIO) {
+        guard let data, let inputHandle = processIO.inputHandle else { return }
+
+        // A pipe must be fed only after the child starts reading. Writing a
+        // large prompt before process.run() can fill the pipe and freeze the
+        // caller indefinitely.
+        processQueue.async {
+            try? inputHandle.write(contentsOf: data)
+            try? inputHandle.close()
         }
     }
 
     private func configureProcess(
         _ process: Process,
         config: ProcessConfig,
-        stdoutPipe: Pipe,
-        stderrPipe: Pipe,
+        processIO: ProcessIO,
         directExec: Bool = false
     ) {
         if directExec {
@@ -175,20 +189,16 @@ final class ShellService {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = [config.executable] + config.arguments
         }
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        process.qualityOfService = .utility
+        process.standardOutput = processIO.stdoutPipe
+        process.standardError = processIO.stderrPipe
+        process.standardInput = processIO.stdinPipe
 
         if let cwd = config.cwd {
             process.currentDirectoryURL = cwd
         }
         if let env = config.environment {
             process.environment = env
-        }
-        if let stdinData = config.stdinData {
-            let stdinPipe = Pipe()
-            process.standardInput = stdinPipe
-            stdinPipe.fileHandleForWriting.write(stdinData)
-            stdinPipe.fileHandleForWriting.closeFile()
         }
     }
 
@@ -204,6 +214,66 @@ final class ShellService {
         return timeoutItem
     }
 
+}
+
+/// Owns a child process's pipes and drains them without blocking its caller.
+private final class ProcessIO: @unchecked Sendable {
+    let stdinPipe: Pipe?
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+
+    private let stdoutAccumulator = LockedData()
+    private let stderrAccumulator = LockedData()
+
+    init(hasInput: Bool) {
+        stdinPipe = hasInput ? Pipe() : nil
+    }
+
+    var inputHandle: FileHandle? {
+        stdinPipe?.fileHandleForWriting
+    }
+
+    var stdout: String {
+        String(data: stdoutAccumulator.data, encoding: .utf8) ?? ""
+    }
+
+    var stderr: String {
+        String(data: stderrAccumulator.data, encoding: .utf8) ?? ""
+    }
+
+    func beginReading(
+        stderrHandler: (@Sendable (String) -> Void)?
+    ) {
+        stdoutPipe.fileHandleForReading.readabilityHandler = { [stdoutAccumulator] handle in
+            stdoutAccumulator.append(handle.availableData)
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { [stderrAccumulator] handle in
+            let data = handle.availableData
+            stderrAccumulator.append(data)
+            if let stderrHandler,
+               !data.isEmpty,
+               let text = String(data: data, encoding: .utf8) {
+                stderrHandler(text)
+            }
+        }
+    }
+
+    func finishReading() {
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        stdoutAccumulator.append(
+            stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        )
+        stderrAccumulator.append(
+            stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        )
+    }
+
+    func close() {
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        try? inputHandle?.close()
+    }
 }
 
 /// Thread-safe Data accumulator for use across concurrent closures.
