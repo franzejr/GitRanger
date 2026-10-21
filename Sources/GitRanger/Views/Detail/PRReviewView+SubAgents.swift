@@ -52,6 +52,9 @@ extension PRReviewView {
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(.secondary)
+                    if let metadata = viewModel.agentMetadata[.summary] {
+                        reviewMetadataView(metadata)
+                    }
                     markdownView(PRReviewViewModel.stripVerdictLine(text))
                         .font(.system(size: 12.5))
                 }
@@ -114,6 +117,13 @@ extension PRReviewView {
                 .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
                 .lineLimit(3)
                 .frame(minHeight: 30, alignment: .topLeading)
+
+            if let metadata = viewModel.agentMetadata[agent] {
+                Text("\(metadata.providerName) · \(metadata.modelName)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(GRTheme.muted(colorScheme))
+                    .lineLimit(1)
+            }
 
             HStack(spacing: 6) {
                 Text(agentVerdictLabel(agent, disabled: isDisabled))
@@ -236,6 +246,9 @@ extension PRReviewView {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(agent.displayName)
                             .font(.system(size: 11.5, weight: .semibold))
+                        if let metadata = viewModel.agentMetadata[agent] {
+                            reviewMetadataView(metadata)
+                        }
                         markdownView(PRReviewViewModel.stripVerdictLine(text))
                             .font(.system(size: 11.5))
                         agentActions(agent)
@@ -279,6 +292,9 @@ extension PRReviewView {
         } else if let text = viewModel.agentDeepReviews[agent] {
             Divider()
             customVerdictBanner(for: agent.rawValue)
+            if let metadata = viewModel.agentDeepMetadata[agent] {
+                reviewMetadataView(metadata)
+            }
             markdownView(PRReviewViewModel.stripVerdictLine(text))
         }
     }
@@ -341,5 +357,22 @@ extension PRReviewView {
             .padding(.vertical, 2)
             .background(GRTheme.segment(colorScheme))
             .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    func reviewMetadataView(_ metadata: ReviewRunMetadata) -> some View {
+        HStack(spacing: 5) {
+            Label(metadata.reviewerName, systemImage: "person.crop.circle")
+            Text("·")
+            Text(metadata.providerName)
+            Text("·")
+            Text(metadata.modelName)
+        }
+        .font(.system(size: 9.5, design: .monospaced))
+        .foregroundStyle(GRTheme.muted(colorScheme))
+        .lineLimit(1)
+        .help(
+            "Reviewed by \(metadata.reviewerName) using "
+                + "\(metadata.providerName) · \(metadata.modelName)"
+        )
     }
 }

@@ -72,6 +72,11 @@ final class DesignRenderingTests: XCTestCase {
             size: CGSize(width: 900, height: 820),
             name: "gitranger-pr-dark"
         )
+        try render(
+            makeReviewView(reviewed: false).preferredColorScheme(.dark),
+            size: CGSize(width: 900, height: 600),
+            name: "gitranger-pr-empty-dark"
+        )
 
         try render(
             makeChangesView().preferredColorScheme(.dark),
@@ -105,7 +110,7 @@ final class DesignRenderingTests: XCTestCase {
         )
     }
 
-    private func makeReviewView() -> PRReviewView {
+    private func makeReviewView(reviewed: Bool = true) -> PRReviewView {
         let viewModel = PRReviewViewModel()
         viewModel.selectedPR = PullRequest(
             number: 2_362,
@@ -141,15 +146,23 @@ final class DesignRenderingTests: XCTestCase {
         +    nil
         +  end
         """
-        viewModel.agentReviews[.summary] = """
+        if reviewed {
+            viewModel.agentReviews[.summary] = """
         VERDICT: PASS
 
         Anonymous CPF lookups without a birth date now return 404 instead of raising a 500. The new helper matches every other non-match path.
         """
-        for agent in ReviewAgent.allCases {
-            viewModel.agentReviews[agent] = viewModel.agentReviews[agent]
-                ?? "VERDICT: PASS\n\nNo issues found."
-            viewModel.agentVerdicts[agent] = agent != .bugDetector
+            for agent in ReviewAgent.allCases {
+                viewModel.agentReviews[agent] = viewModel.agentReviews[agent]
+                    ?? "VERDICT: PASS\n\nNo issues found."
+                viewModel.agentVerdicts[agent] = agent != .bugDetector
+                viewModel.agentMetadata[agent] = ReviewRunMetadata(
+                    reviewerName: agent.displayName,
+                    providerName: "Local provider",
+                    modelName: "sonnet",
+                    reviewedAt: Date()
+                )
+            }
         }
 
         let repo = Repo(

@@ -18,6 +18,7 @@ struct AIAvailabilityStatus: Sendable {
 
 protocol AIServiceProtocol {
     var displayName: String { get }
+    var modelName: String { get }
     var requiresAPIKey: Bool { get }
     func isAvailable() async -> Bool
     func availabilityStatus() async -> AIAvailabilityStatus

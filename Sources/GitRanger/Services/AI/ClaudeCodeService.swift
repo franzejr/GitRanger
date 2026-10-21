@@ -3,6 +3,16 @@ import Foundation
 final class ClaudeCodeService: AIServiceProtocol {
     let displayName = "Claude Code (Local)"
     let requiresAPIKey = false
+    var modelName: String {
+        Self.resolvedModel(
+            selected: UserDefaults.standard.string(
+                forKey: "claudeModel"
+            ) ?? "haiku",
+            custom: UserDefaults.standard.string(
+                forKey: "claudeCustomModel"
+            ) ?? ""
+        )
+    }
 
     private let shell = ShellService.shared
 

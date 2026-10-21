@@ -592,6 +592,7 @@ final class AIServiceFactoryTests: XCTestCase {
         let settings = AISettings()
         let service = AIServiceFactory.create(provider: .claudeCode, settings: settings)
         XCTAssertEqual(service.displayName, "Claude Code (Local)")
+        XCTAssertFalse(service.modelName.isEmpty)
         XCTAssertFalse(service.requiresAPIKey)
     }
 
@@ -601,6 +602,7 @@ final class AIServiceFactoryTests: XCTestCase {
         let service = AIServiceFactory.create(provider: .anthropicAPI, settings: settings)
         XCTAssertEqual(service.displayName, "Anthropic API")
         XCTAssertTrue(service.requiresAPIKey)
+        XCTAssertEqual(service.modelName, settings.anthropicModel)
     }
 
     func testCreateCodexCLI() {
@@ -616,6 +618,7 @@ final class AIServiceFactoryTests: XCTestCase {
         let service = AIServiceFactory.create(provider: .openAI, settings: settings)
         XCTAssertEqual(service.displayName, "OpenAI API")
         XCTAssertTrue(service.requiresAPIKey)
+        XCTAssertEqual(service.modelName, settings.openAIModel)
     }
 
     func testCreateOllama() {
@@ -623,6 +626,57 @@ final class AIServiceFactoryTests: XCTestCase {
         let service = AIServiceFactory.create(provider: .ollama, settings: settings)
         XCTAssertEqual(service.displayName, "Ollama (Local)")
         XCTAssertFalse(service.requiresAPIKey)
+        XCTAssertEqual(service.modelName, settings.ollamaModel)
+    }
+
+    func testModelCatalogOffersCurrentAndCustomizableChoices() {
+        let anthropic = AIModelCatalog.builtInOptions(for: .anthropicAPI)
+        let openAI = AIModelCatalog.builtInOptions(for: .openAI)
+
+        XCTAssertTrue(anthropic.contains { $0.id == "claude-sonnet-4-6" })
+        XCTAssertTrue(openAI.contains { $0.id == "gpt-4.1" })
+        XCTAssertEqual(Set(openAI.map(\.id)).count, openAI.count)
+    }
+}
+
+// MARK: - Pull Request Content Cache Tests
+
+final class PRContentLoaderTests: XCTestCase {
+    func testContentPersistsByHeadSHA() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gitranger-pr-cache-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let request = PRContentRequest(
+            repoURL: "https://example.com/team/repo",
+            prNumber: 42,
+            headSHA: "abc123",
+            githubAccount: nil,
+            gitlabHost: nil
+        )
+        let content = PRContent(
+            diff: "+cached line",
+            detail: PRDetail(title: "Cached PR", body: "Cached body"),
+            fetchedAt: Date()
+        )
+        let writer = PRContentLoader(cacheDirectory: directory)
+        await writer.store(content, for: request)
+
+        let reader = PRContentLoader(cacheDirectory: directory)
+        let cached = await reader.cachedContent(for: request)
+        let changedHead = PRContentRequest(
+            repoURL: request.repoURL,
+            prNumber: request.prNumber,
+            headSHA: "new-head",
+            githubAccount: nil,
+            gitlabHost: nil
+        )
+
+        XCTAssertEqual(cached?.diff, content.diff)
+        XCTAssertEqual(cached?.detail.title, content.detail.title)
+        XCTAssertEqual(cached?.detail.body, content.detail.body)
+        let staleContent = await reader.cachedContent(for: changedHead)
+        XCTAssertNil(staleContent)
     }
 }
 

@@ -44,6 +44,19 @@ struct PRListView: View {
         .onChange(of: repo?.id) { _, _ in
             selectedPRNumber = nil
         }
+        .task(id: prefetchID) {
+            guard let repo, !viewModel.pullRequests.isEmpty else { return }
+            let requests = viewModel.pullRequests.prefix(3).map { pr in
+                PRContentRequest(
+                    repoURL: repo.url,
+                    prNumber: pr.number,
+                    headSHA: pr.headRefOid,
+                    githubAccount: repo.ghAccount,
+                    gitlabHost: repo.glHost
+                )
+            }
+            await PRContentLoader.shared.prefetch(requests)
+        }
         .sheet(isPresented: $showReviewPrompt) {
             if let repo {
                 ReviewPromptSheet(repo: repo, isPresented: $showReviewPrompt)
@@ -67,6 +80,11 @@ struct PRListView: View {
 
     private var currentUser: String? {
         viewModel.currentGhUser ?? viewModel.currentGlUser
+    }
+
+    private var prefetchID: String {
+        let heads = viewModel.pullRequests.prefix(3).map(\.headRefOid)
+        return "\(repo?.id.uuidString ?? "none"):\(heads.joined(separator: ","))"
     }
 
     private var emptyMessage: String {

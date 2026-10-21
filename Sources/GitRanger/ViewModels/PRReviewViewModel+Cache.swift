@@ -4,6 +4,15 @@ import SwiftData
 // MARK: - Cache Operations
 
 extension PRReviewViewModel {
+    struct ReviewCacheKey {
+        let repoUrl: String
+        let prNumber: Int
+        let headSha: String
+        let reviewText: String
+        let providerName: String
+        let modelName: String
+    }
+
     struct SubAgentCacheKey {
         let repoUrl: String
         let prNumber: Int
@@ -11,6 +20,8 @@ extension PRReviewViewModel {
         let agentKind: String
         let reviewText: String
         let providerName: String
+        let reviewerName: String
+        let modelName: String
     }
 
     func findCachedReview(
@@ -45,20 +56,15 @@ extension PRReviewViewModel {
         try? modelContext?.save()
     }
 
-    func saveReview(
-        repoUrl: String,
-        prNumber: Int,
-        headSha: String,
-        reviewText: String,
-        providerName: String
-    ) {
+    func saveReview(_ key: ReviewCacheKey) {
         guard let modelContext else { return }
         let review = PRReview(
-            repoUrl: repoUrl,
-            prNumber: prNumber,
-            headSha: headSha,
-            reviewText: reviewText,
-            providerName: providerName
+            repoUrl: key.repoUrl,
+            prNumber: key.prNumber,
+            headSha: key.headSha,
+            reviewText: key.reviewText,
+            providerName: key.providerName,
+            modelName: key.modelName
         )
         modelContext.insert(review)
         try? modelContext.save()
@@ -86,6 +92,10 @@ extension PRReviewViewModel {
         if let agent = ReviewAgent(rawValue: cached.agentKind) {
             agentReviews[agent] = cached.reviewText
             agentCached.insert(agent)
+            agentMetadata[agent] = metadata(
+                from: cached,
+                fallbackReviewer: agent.displayName
+            )
             agentVerdicts[agent] = Self.parseVerdict(
                 cached.reviewText
             )
@@ -95,6 +105,10 @@ extension PRReviewViewModel {
             )
             customAgentReviews[customId] = cached.reviewText
             customAgentCached.insert(customId)
+            customAgentMetadata[customId] = metadata(
+                from: cached,
+                fallbackReviewer: "Custom reviewer"
+            )
             customAgentVerdicts[customId] = Self.parseVerdict(
                 cached.reviewText
             )
@@ -129,9 +143,23 @@ extension PRReviewViewModel {
             headSha: key.headSha,
             agentKind: key.agentKind,
             reviewText: key.reviewText,
-            providerName: key.providerName
+            providerName: key.providerName,
+            reviewerName: key.reviewerName,
+            modelName: key.modelName
         )
         modelContext.insert(review)
         try? modelContext.save()
+    }
+
+    private func metadata(
+        from review: SubAgentReview,
+        fallbackReviewer: String
+    ) -> ReviewRunMetadata {
+        ReviewRunMetadata(
+            reviewerName: review.reviewerName ?? fallbackReviewer,
+            providerName: review.providerName,
+            modelName: review.modelName ?? "Unknown model",
+            reviewedAt: review.reviewedAt
+        )
     }
 }

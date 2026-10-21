@@ -9,9 +9,9 @@ struct AIProviderSettingsView: View {
     @AppStorage("codexModel") private var codexModel = ""
     @AppStorage("codexRepoContext") private var codexRepoContext = true
     @AppStorage("anthropicAPIKey") private var anthropicAPIKey = ""
-    @AppStorage("anthropicModel") private var anthropicModel = "claude-sonnet-4-5-20250514"
+    @AppStorage("anthropicModel") private var anthropicModel = "claude-sonnet-4-6"
     @AppStorage("openAIAPIKey") private var openAIAPIKey = ""
-    @AppStorage("openAIModel") private var openAIModel = "gpt-4o"
+    @AppStorage("openAIModel") private var openAIModel = "gpt-4.1"
     @AppStorage("ollamaModel") private var ollamaModel = "llama3.2"
     @AppStorage("ollamaURL") private var ollamaURL = "http://localhost:11434"
     @AppStorage("prReviewPrompt") private var prReviewPrompt = ""
@@ -50,6 +50,9 @@ struct AIProviderSettingsView: View {
                 providerDetail
             }
             .padding(28)
+        }
+        .task(id: selectedProvider.rawValue) {
+            await settingsVM.loadModels(for: selectedProvider)
         }
     }
 
@@ -184,21 +187,16 @@ struct AIProviderSettingsView: View {
             SettingsRow("API key") {
                 SecureField("Anthropic API key", text: $anthropicAPIKey)
             }
-            SettingsRow("Model") {
-                Picker("Model", selection: $anthropicModel) {
-                    Text("Claude Sonnet 4.5").tag("claude-sonnet-4-5-20250514")
-                    Text("Claude Haiku 4.5").tag("claude-haiku-4-5-20251001")
-                    Text("Claude Opus 4.5").tag("claude-opus-4-5-20250918")
-                }.labelsHidden()
+            SettingsRow("Model", alignment: .top) {
+                modelPicker(provider: .anthropicAPI, selection: $anthropicModel)
             }
         }
     }
 
     private var codexConfiguration: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SettingsRow("Model") {
-                TextField("Use Codex CLI default", text: $codexModel)
-                    .font(.system(size: 11, design: .monospaced))
+            SettingsRow("Model", alignment: .top) {
+                modelPicker(provider: .codexCLI, selection: $codexModel)
             }
             SettingsRow("Repo context") {
                 HStack(spacing: 8) {
@@ -221,20 +219,88 @@ struct AIProviderSettingsView: View {
     private var openAIConfiguration: some View {
         VStack(spacing: 10) {
             SettingsRow("API key") { SecureField("OpenAI API key", text: $openAIAPIKey) }
-            SettingsRow("Model") {
-                Picker("Model", selection: $openAIModel) {
-                    Text("GPT-4o").tag("gpt-4o")
-                    Text("GPT-4o Mini").tag("gpt-4o-mini")
-                    Text("GPT-4 Turbo").tag("gpt-4-turbo")
-                }.labelsHidden()
+            SettingsRow("Model", alignment: .top) {
+                modelPicker(provider: .openAI, selection: $openAIModel)
             }
         }
     }
 
     private var ollamaConfiguration: some View {
         VStack(spacing: 10) {
-            SettingsRow("Model") { TextField("Model", text: $ollamaModel) }
+            SettingsRow("Model", alignment: .top) {
+                modelPicker(provider: .ollama, selection: $ollamaModel)
+            }
             SettingsRow("Server URL") { TextField("URL", text: $ollamaURL) }
+        }
+    }
+
+    private func modelPicker(
+        provider: AIProvider,
+        selection: Binding<String>
+    ) -> some View {
+        ModelPicker(
+            selection: selection,
+            options: settingsVM.models(for: provider),
+            isLoading: settingsVM.loadingModels.contains(provider),
+            error: settingsVM.modelLoadErrors[provider]
+        ) {
+            Task { await settingsVM.loadModels(for: provider, force: true) }
+        }
+    }
+}
+
+private struct ModelPicker: View {
+    @Binding var selection: String
+    let options: [AIModelOption]
+    let isLoading: Bool
+    let error: String?
+    let refresh: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var displayedOptions: [AIModelOption] {
+        guard !options.contains(where: { $0.id == selection }) else {
+            return options
+        }
+        let name = selection.isEmpty ? "Provider default" : selection
+        return [AIModelOption(id: selection, name: name)] + options
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Picker("Model", selection: $selection) {
+                    ForEach(displayedOptions) { option in
+                        Text(option.name).tag(option.id)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 240)
+
+                Button(action: refresh) {
+                    if isLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+                .help("Refresh available models")
+            }
+
+            TextField("Custom model ID", text: $selection)
+                .font(.system(size: 10.5, design: .monospaced))
+
+            if let error {
+                Text(error)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(GRTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Choose a discovered model or enter an exact model ID.")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(GRTheme.muted(colorScheme))
+            }
         }
     }
 }

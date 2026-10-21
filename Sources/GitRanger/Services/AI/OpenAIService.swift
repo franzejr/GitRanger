@@ -3,11 +3,12 @@ import Foundation
 final class OpenAIService: AIServiceProtocol {
     let displayName = "OpenAI API"
     let requiresAPIKey = true
+    var modelName: String { model }
 
     private let apiKey: String
     private let model: String
 
-    init(apiKey: String, model: String = "gpt-4o") {
+    init(apiKey: String, model: String = "gpt-4.1") {
         self.apiKey = apiKey
         self.model = model
     }

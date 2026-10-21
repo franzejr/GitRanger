@@ -10,27 +10,25 @@ extension String {
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
+    private struct Row {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
     func sizeThatFits(
         proposal: ProposedViewSize,
         subviews: Subviews,
         cache: inout ()
     ) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var currentX: CGFloat = 0
-        var currentY: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if currentX + size.width > maxWidth, currentX > 0 {
-                currentX = 0
-                currentY += rowHeight + spacing
-                rowHeight = 0
-            }
-            currentX += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+        let availableWidth = proposal.width ?? .infinity
+        let rows = makeRows(subviews: subviews, maxWidth: availableWidth)
+        let contentWidth = rows.map(\.width).max() ?? 0
+        let width = availableWidth.isFinite ? availableWidth : contentWidth
+        let height = rows.enumerated().reduce(CGFloat.zero) { total, item in
+            total + item.element.height + (item.offset == 0 ? 0 : spacing)
         }
-        return CGSize(width: maxWidth, height: currentY + rowHeight)
+        return CGSize(width: width, height: height)
     }
 
     func placeSubviews(
@@ -39,21 +37,44 @@ struct FlowLayout: Layout {
         subviews: Subviews,
         cache: inout ()
     ) {
-        var currentX = bounds.minX
-        var currentY = bounds.minY
-        var rowHeight: CGFloat = 0
+        let rows = makeRows(subviews: subviews, maxWidth: bounds.width)
+        var y = bounds.minY
 
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if currentX + size.width > bounds.maxX, currentX > bounds.minX {
-                currentX = bounds.minX
-                currentY += rowHeight + spacing
-                rowHeight = 0
+        for row in rows {
+            var x = bounds.midX - row.width / 2
+            for item in row.items {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
             }
-            subview.place(at: CGPoint(x: currentX, y: currentY), proposal: .unspecified)
-            currentX += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+            y += row.height + spacing
         }
+    }
+
+    private func makeRows(
+        subviews: Subviews,
+        maxWidth: CGFloat
+    ) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            let nextWidth = row.items.isEmpty
+                ? size.width
+                : row.width + spacing + size.width
+            if nextWidth > maxWidth, !row.items.isEmpty {
+                rows.append(row)
+                row = Row()
+            }
+            row.items.append((index, size))
+            row.width += (row.items.count == 1 ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+        }
+        if !row.items.isEmpty { rows.append(row) }
+        return rows
     }
 }
 
@@ -77,7 +98,7 @@ struct PRReviewView: View {
         VStack(alignment: .leading, spacing: 0) {
             detailToolbar
 
-            if viewModel.isLoading && viewModel.review == nil && viewModel.diff == nil {
+            if viewModel.selectedPR == nil {
                 loadingState("Loading PR data...")
             } else if let error = viewModel.error,
                       viewModel.review == nil,
@@ -176,6 +197,10 @@ struct PRReviewView: View {
                     if pr.deletions > 0 {
                         Text("−\(pr.deletions)").foregroundStyle(GRTheme.danger)
                     }
+                    if viewModel.isContentCached {
+                        Label("cached", systemImage: "bolt.fill")
+                            .foregroundStyle(GRTheme.success)
+                    }
                 }
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(GRTheme.muted(colorScheme))
@@ -206,12 +231,30 @@ struct PRReviewView: View {
     private var reviewSection: some View {
         if viewModel.hasSubAgentResults {
             subAgentReviewContent
+        } else if viewModel.isLoading && viewModel.diff == nil {
+            loadingReviewContent
         } else if viewModel.review != nil
                     || (viewModel.isLoading && !viewModel.isAnyAgentLoading) {
             reviewWithTabs
         } else {
             generatePrompt
         }
+    }
+
+    private var loadingReviewContent: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Loading review workspace")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("The pull request is already usable while its diff is fetched.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .grCard()
     }
 
     private var generatePrompt: some View {
@@ -277,6 +320,13 @@ struct PRReviewView: View {
                     diff: diff,
                     contentID: viewModel.selectedPR?.headRefOid ?? ""
                 )
+            }
+        } else if viewModel.isLoading {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading diff…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(GRTheme.mutedSecondary(colorScheme))
             }
         }
     }

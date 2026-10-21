@@ -14,6 +14,8 @@ final class PRReviewViewModel {
     var prDetail: PRDetail?
     var selectedPR: PullRequest?
     var isCached = false
+    var isContentCached = false
+    var reviewMetadata: ReviewRunMetadata?
 
     // Sub-agent reviews (built-in)
     var agentReviews: [ReviewAgent: String] = [:]
@@ -22,6 +24,7 @@ final class PRReviewViewModel {
     var agentQueued: Set<ReviewAgent> = []
     var agentCached: Set<ReviewAgent> = []
     var agentVerdicts: [ReviewAgent: Bool] = [:]
+    var agentMetadata: [ReviewAgent: ReviewRunMetadata] = [:]
 
     // Custom agent reviews (keyed by custom agent ID)
     var customAgentReviews: [String: String] = [:]
@@ -30,12 +33,14 @@ final class PRReviewViewModel {
     var customAgentQueued: Set<String> = []
     var customAgentCached: Set<String> = []
     var customAgentVerdicts: [String: Bool] = [:]
+    var customAgentMetadata: [String: ReviewRunMetadata] = [:]
 
     // Deep verify (second pass per agent)
     var agentDeepReviews: [ReviewAgent: String] = [:]
     var agentDeepErrors: [ReviewAgent: String] = [:]
     var agentDeepLoading: Set<ReviewAgent> = []
     var agentDeepVerdicts: [ReviewAgent: Bool] = [:]
+    var agentDeepMetadata: [ReviewAgent: ReviewRunMetadata] = [:]
 
     var launchedAgentCount: Int = 0
 
@@ -98,11 +103,28 @@ final class PRReviewViewModel {
         diff = nil
         prDetail = nil
         isCached = false
+        isContentCached = false
+        reviewMetadata = nil
         agentReviews = [:]
         agentErrors = [:]
         agentLoading = []
         agentQueued = []
         agentCached = []
+        agentVerdicts = [:]
+        agentMetadata = [:]
+        customAgentReviews = [:]
+        customAgentErrors = [:]
+        customAgentLoading = []
+        customAgentQueued = []
+        customAgentCached = []
+        customAgentVerdicts = [:]
+        customAgentMetadata = [:]
+        agentDeepReviews = [:]
+        agentDeepErrors = [:]
+        agentDeepLoading = []
+        agentDeepVerdicts = [:]
+        agentDeepMetadata = [:]
+        launchedAgentCount = 0
     }
 
     func loadPR(_ pr: PullRequest, repo: Repo) async {
@@ -123,6 +145,12 @@ final class PRReviewViewModel {
                 review = cached.reviewText
                 secondReview = cached.secondReviewText
                 isCached = true
+                reviewMetadata = ReviewRunMetadata(
+                    reviewerName: "General review",
+                    providerName: cached.providerName,
+                    modelName: cached.modelName ?? "Unknown model",
+                    reviewedAt: cached.reviewedAt
+                )
             }
 
             loadCachedSubAgentReviews(
@@ -142,33 +170,17 @@ final class PRReviewViewModel {
     private func loadRemoteContent(
         for pr: PullRequest, repo: Repo
     ) async throws {
-        if gitlabService.isGitLabRepo(url: repo.url) {
-            async let loadedDiff = gitlabService.getMRDiff(
-                repoUrl: repo.url,
-                mrNumber: pr.number,
-                host: repo.glHost
-            )
-            async let loadedDetail = gitlabService.getMRDetail(
-                repoUrl: repo.url,
-                mrNumber: pr.number,
-                host: repo.glHost
-            )
-            diff = try await loadedDiff
-            prDetail = try await loadedDetail
-        } else {
-            async let loadedDiff = githubService.getPRDiff(
-                repoUrl: repo.url,
-                prNumber: pr.number,
-                account: repo.ghAccount
-            )
-            async let loadedDetail = githubService.getPRDetail(
-                repoUrl: repo.url,
-                prNumber: pr.number,
-                account: repo.ghAccount
-            )
-            diff = try await loadedDiff
-            prDetail = try await loadedDetail
-        }
+        let request = PRContentRequest(
+            repoURL: repo.url,
+            prNumber: pr.number,
+            headSHA: pr.headRefOid,
+            githubAccount: repo.ghAccount,
+            gitlabHost: repo.glHost
+        )
+        let result = try await PRContentLoader.shared.load(request)
+        diff = result.content.diff
+        prDetail = result.content.detail
+        isContentCached = result.isCached
     }
 
     // MARK: - Legacy Single Review
@@ -205,13 +217,20 @@ final class PRReviewViewModel {
             )
 
             review = result
-            saveReview(
+            reviewMetadata = ReviewRunMetadata(
+                reviewerName: "General review",
+                providerName: provider.displayName,
+                modelName: provider.modelName,
+                reviewedAt: Date()
+            )
+            saveReview(.init(
                 repoUrl: repo.url,
                 prNumber: pr.number,
                 headSha: pr.headRefOid,
                 reviewText: result,
-                providerName: provider.displayName
-            )
+                providerName: provider.displayName,
+                modelName: provider.modelName
+            ))
         } catch {
             self.error = error.localizedDescription
         }
@@ -266,6 +285,8 @@ final class PRReviewViewModel {
         prDetail = nil
         selectedPR = nil
         isCached = false
+        isContentCached = false
+        reviewMetadata = nil
         actionError = nil
         actionSuccess = nil
         isSubmittingAction = false
@@ -275,16 +296,19 @@ final class PRReviewViewModel {
         agentQueued = []
         agentCached = []
         agentVerdicts = [:]
+        agentMetadata = [:]
         customAgentReviews = [:]
         customAgentErrors = [:]
         customAgentLoading = []
         customAgentQueued = []
         customAgentCached = []
         customAgentVerdicts = [:]
+        customAgentMetadata = [:]
         agentDeepReviews = [:]
         agentDeepErrors = [:]
         agentDeepLoading = []
         agentDeepVerdicts = [:]
+        agentDeepMetadata = [:]
         launchedAgentCount = 0
     }
 

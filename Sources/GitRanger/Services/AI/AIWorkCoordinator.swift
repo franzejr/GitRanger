@@ -53,6 +53,7 @@ final class CoordinatedAIService: AIServiceProtocol {
     }
 
     var displayName: String { base.displayName }
+    var modelName: String { base.modelName }
     var requiresAPIKey: Bool { base.requiresAPIKey }
 
     func isAvailable() async -> Bool {

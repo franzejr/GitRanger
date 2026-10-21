@@ -3,11 +3,12 @@ import Foundation
 final class AnthropicAPIService: AIServiceProtocol {
     let displayName = "Anthropic API"
     let requiresAPIKey = true
+    var modelName: String { model }
 
     private let apiKey: String
     private let model: String
 
-    init(apiKey: String, model: String = "claude-sonnet-4-5-20250514") {
+    init(apiKey: String, model: String = "claude-sonnet-4-6") {
         self.apiKey = apiKey
         self.model = model
     }

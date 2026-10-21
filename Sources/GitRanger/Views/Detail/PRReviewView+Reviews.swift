@@ -95,6 +95,9 @@ extension PRReviewView {
                 Task { await viewModel.generateReview(repo: repo) }
             }
         } else if let review = viewModel.review {
+            if let metadata = viewModel.reviewMetadata {
+                reviewMetadataView(metadata)
+            }
             markdownView(review)
 
             HStack {

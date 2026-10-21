@@ -94,6 +94,9 @@ extension PRReviewView {
                 }
             } else if let text = viewModel.customAgentReviews[agentId] {
                 customVerdictBanner(for: agentId)
+                if let metadata = viewModel.customAgentMetadata[agentId] {
+                    reviewMetadataView(metadata)
+                }
                 markdownView(PRReviewViewModel.stripVerdictLine(text))
                 customAgentActionButtons(agent, agentId: agentId)
             }

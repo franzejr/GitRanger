@@ -3,6 +3,7 @@ import Foundation
 final class OllamaService: AIServiceProtocol {
     let displayName = "Ollama (Local)"
     let requiresAPIKey = false
+    var modelName: String { model }
 
     private let model: String
     private let baseURL: String

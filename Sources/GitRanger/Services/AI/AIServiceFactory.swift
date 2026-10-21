@@ -58,9 +58,9 @@ final class AIServiceFactory {
         return AISettings(
             aiProvider: AIProvider(rawValue: defaults.string(forKey: "aiProvider") ?? "") ?? .claudeCode,
             anthropicAPIKey: defaults.string(forKey: "anthropicAPIKey") ?? "",
-            anthropicModel: defaults.string(forKey: "anthropicModel") ?? "claude-sonnet-4-5-20250514",
+            anthropicModel: defaults.string(forKey: "anthropicModel") ?? "claude-sonnet-4-6",
             openAIAPIKey: defaults.string(forKey: "openAIAPIKey") ?? "",
-            openAIModel: defaults.string(forKey: "openAIModel") ?? "gpt-4o",
+            openAIModel: defaults.string(forKey: "openAIModel") ?? "gpt-4.1",
             ollamaModel: defaults.string(forKey: "ollamaModel") ?? "llama3.2",
             ollamaURL: defaults.string(forKey: "ollamaURL") ?? "http://localhost:11434"
         )

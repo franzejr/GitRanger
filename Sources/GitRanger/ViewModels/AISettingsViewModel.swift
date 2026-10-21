@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 @Observable
 final class AISettingsViewModel {
     var providerStatuses: [(
@@ -7,21 +8,55 @@ final class AISettingsViewModel {
         status: AIAvailabilityStatus
     )] = []
     var isChecking = false
+    var modelOptions: [AIProvider: [AIModelOption]] = [:]
+    var loadingModels: Set<AIProvider> = []
+    var modelLoadErrors: [AIProvider: String] = [:]
 
     func checkAvailability() async {
         isChecking = true
-        var results: [(AIProvider, AIAvailabilityStatus)] = []
-
         let settings = AIServiceFactory.settingsFromUserDefaults()
-
-        for provider in AIProvider.allCases {
-            let service = AIServiceFactory.create(provider: provider, settings: settings)
-            let status = await service.availabilityStatus()
-            results.append((provider, status))
+        let results = await withTaskGroup(
+            of: (AIProvider, AIAvailabilityStatus).self,
+            returning: [(AIProvider, AIAvailabilityStatus)].self
+        ) { group in
+            for provider in AIProvider.allCases {
+                group.addTask {
+                    let service = AIServiceFactory.create(
+                        provider: provider,
+                        settings: settings
+                    )
+                    return (provider, await service.availabilityStatus())
+                }
+            }
+            var statuses: [(AIProvider, AIAvailabilityStatus)] = []
+            for await status in group { statuses.append(status) }
+            return statuses
         }
-
         providerStatuses = results
         isChecking = false
+    }
+
+    func loadModels(for provider: AIProvider, force: Bool = false) async {
+        if !force, modelOptions[provider] != nil { return }
+        loadingModels.insert(provider)
+        modelLoadErrors.removeValue(forKey: provider)
+        let builtIn = AIModelCatalog.builtInOptions(for: provider)
+        modelOptions[provider] = builtIn
+
+        do {
+            let discovered = try await AIModelDiscoveryService.shared.discover(
+                provider: provider,
+                settings: AIServiceFactory.settingsFromUserDefaults()
+            )
+            modelOptions[provider] = Self.merge(builtIn, discovered)
+        } catch {
+            modelLoadErrors[provider] = error.localizedDescription
+        }
+        loadingModels.remove(provider)
+    }
+
+    func models(for provider: AIProvider) -> [AIModelOption] {
+        modelOptions[provider] ?? AIModelCatalog.builtInOptions(for: provider)
     }
 
     func isAvailable(_ provider: AIProvider) -> Bool? {
@@ -32,5 +67,13 @@ final class AISettingsViewModel {
         for provider: AIProvider
     ) -> AIAvailabilityStatus? {
         providerStatuses.first { $0.provider == provider }?.status
+    }
+
+    private static func merge(
+        _ primary: [AIModelOption],
+        _ secondary: [AIModelOption]
+    ) -> [AIModelOption] {
+        var seen: Set<String> = []
+        return (primary + secondary).filter { seen.insert($0.id).inserted }
     }
 }

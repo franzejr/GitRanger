@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - AI Provider
 
-enum AIProvider: String, CaseIterable, Codable {
+enum AIProvider: String, CaseIterable, Codable, Sendable {
     case claudeCode = "claude_code"
     case codexCLI = "codex_cli"
     case anthropicAPI = "anthropic_api"
@@ -142,6 +142,13 @@ struct CustomReviewAgent: Codable, Identifiable, Hashable, Sendable {
     }()
 }
 
+struct ReviewRunMetadata: Equatable, Sendable {
+    let reviewerName: String
+    let providerName: String
+    let modelName: String
+    let reviewedAt: Date
+}
+
 // MARK: - Impact Level
 
 enum ImpactLevel: String, Codable, CaseIterable {
@@ -244,12 +251,12 @@ enum AIError: LocalizedError {
 
 // MARK: - AI Settings
 
-struct AISettings {
+struct AISettings: Sendable {
     var aiProvider: AIProvider = .claudeCode
     var anthropicAPIKey: String = ""
-    var anthropicModel: String = "claude-sonnet-4-5-20250514"
+    var anthropicModel: String = "claude-sonnet-4-6"
     var openAIAPIKey: String = ""
-    var openAIModel: String = "gpt-4o"
+    var openAIModel: String = "gpt-4.1"
     var ollamaModel: String = "llama3.2"
     var ollamaURL: String = "http://localhost:11434"
 }
@@ -313,7 +320,7 @@ struct PullRequest: Identifiable {
     }
 }
 
-struct PRDetail {
+struct PRDetail: Codable, Sendable {
     let title: String
     let body: String
 }

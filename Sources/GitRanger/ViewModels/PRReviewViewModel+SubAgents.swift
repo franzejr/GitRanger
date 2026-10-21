@@ -85,13 +85,19 @@ extension PRReviewViewModel {
 
             agentReviews[agent] = result
             agentVerdicts[agent] = Self.parseVerdict(result)
+            agentMetadata[agent] = reviewMetadata(
+                reviewerName: agent.displayName,
+                provider: provider
+            )
             saveSubAgentReview(.init(
                 repoUrl: repo.url,
                 prNumber: pr.number,
                 headSha: pr.headRefOid,
                 agentKind: agent.rawValue,
                 reviewText: result,
-                providerName: provider.displayName
+                providerName: provider.displayName,
+                reviewerName: agent.displayName,
+                modelName: provider.modelName
             ))
         } catch {
             agentErrors[agent] = error.localizedDescription
@@ -127,13 +133,19 @@ extension PRReviewViewModel {
 
             customAgentReviews[agentId] = result
             customAgentVerdicts[agentId] = Self.parseVerdict(result)
+            customAgentMetadata[agentId] = reviewMetadata(
+                reviewerName: customAgent.name,
+                provider: provider
+            )
             saveSubAgentReview(.init(
                 repoUrl: repo.url,
                 prNumber: pr.number,
                 headSha: pr.headRefOid,
                 agentKind: "custom_\(agentId)",
                 reviewText: result,
-                providerName: provider.displayName
+                providerName: provider.displayName,
+                reviewerName: customAgent.name,
+                modelName: provider.modelName
             ))
         } catch {
             customAgentErrors[agentId] = error.localizedDescription
@@ -171,6 +183,10 @@ extension PRReviewViewModel {
 
             agentDeepReviews[agent] = result
             agentDeepVerdicts[agent] = Self.parseVerdict(result)
+            agentDeepMetadata[agent] = reviewMetadata(
+                reviewerName: "\(agent.displayName) verification",
+                provider: provider
+            )
         } catch {
             agentDeepErrors[agent] = error.localizedDescription
         }
@@ -192,12 +208,14 @@ extension PRReviewViewModel {
         agentQueued = Set(agents)
         agentCached = []
         agentVerdicts = [:]
+        agentMetadata = [:]
         customAgentReviews = [:]
         customAgentErrors = [:]
         customAgentLoading = []
         customAgentQueued = Set(customAgents.map(\.id))
         customAgentCached = []
         customAgentVerdicts = [:]
+        customAgentMetadata = [:]
         launchedAgentCount = agents.count + customAgents.count
     }
 
@@ -309,40 +327,83 @@ extension PRReviewViewModel {
     ) {
         switch taskResult {
         case .builtIn(let agent, let result):
-            agentLoading.remove(agent)
-            switch result {
-            case .success(let text):
-                agentReviews[agent] = text
-                agentVerdicts[agent] = Self.parseVerdict(text)
-                saveSubAgentReview(.init(
-                    repoUrl: ctx.repo.url,
-                    prNumber: ctx.pr.number,
-                    headSha: ctx.pr.headRefOid,
-                    agentKind: agent.rawValue,
-                    reviewText: text,
-                    providerName: ctx.provider.displayName
-                ))
-            case .failure(let err):
-                agentErrors[agent] = err.localizedDescription
-            }
+            handleBuiltInResult(agent, result: result, ctx: ctx)
 
         case .custom(let agentId, let result):
-            customAgentLoading.remove(agentId)
-            switch result {
-            case .success(let text):
-                customAgentReviews[agentId] = text
-                customAgentVerdicts[agentId] = Self.parseVerdict(text)
-                saveSubAgentReview(.init(
-                    repoUrl: ctx.repo.url,
-                    prNumber: ctx.pr.number,
-                    headSha: ctx.pr.headRefOid,
-                    agentKind: "custom_\(agentId)",
-                    reviewText: text,
-                    providerName: ctx.provider.displayName
-                ))
-            case .failure(let err):
-                customAgentErrors[agentId] = err.localizedDescription
-            }
+            handleCustomResult(agentId, result: result, ctx: ctx)
         }
+    }
+
+    private func handleBuiltInResult(
+        _ agent: ReviewAgent,
+        result: Result<String, Error>,
+        ctx: ReviewContext
+    ) {
+        agentLoading.remove(agent)
+        switch result {
+        case .success(let text):
+            agentReviews[agent] = text
+            agentVerdicts[agent] = Self.parseVerdict(text)
+            agentMetadata[agent] = reviewMetadata(
+                reviewerName: agent.displayName,
+                provider: ctx.provider
+            )
+            saveSubAgentReview(.init(
+                repoUrl: ctx.repo.url,
+                prNumber: ctx.pr.number,
+                headSha: ctx.pr.headRefOid,
+                agentKind: agent.rawValue,
+                reviewText: text,
+                providerName: ctx.provider.displayName,
+                reviewerName: agent.displayName,
+                modelName: ctx.provider.modelName
+            ))
+        case .failure(let error):
+            agentErrors[agent] = error.localizedDescription
+        }
+    }
+
+    private func handleCustomResult(
+        _ agentId: String,
+        result: Result<String, Error>,
+        ctx: ReviewContext
+    ) {
+        customAgentLoading.remove(agentId)
+        switch result {
+        case .success(let text):
+            customAgentReviews[agentId] = text
+            customAgentVerdicts[agentId] = Self.parseVerdict(text)
+            let reviewerName = ctx.repo.customAgents.first {
+                $0.id == agentId
+            }?.name ?? "Custom reviewer"
+            customAgentMetadata[agentId] = reviewMetadata(
+                reviewerName: reviewerName,
+                provider: ctx.provider
+            )
+            saveSubAgentReview(.init(
+                repoUrl: ctx.repo.url,
+                prNumber: ctx.pr.number,
+                headSha: ctx.pr.headRefOid,
+                agentKind: "custom_\(agentId)",
+                reviewText: text,
+                providerName: ctx.provider.displayName,
+                reviewerName: reviewerName,
+                modelName: ctx.provider.modelName
+            ))
+        case .failure(let error):
+            customAgentErrors[agentId] = error.localizedDescription
+        }
+    }
+
+    private func reviewMetadata(
+        reviewerName: String,
+        provider: any AIServiceProtocol
+    ) -> ReviewRunMetadata {
+        ReviewRunMetadata(
+            reviewerName: reviewerName,
+            providerName: provider.displayName,
+            modelName: provider.modelName,
+            reviewedAt: Date()
+        )
     }
 }

@@ -3,6 +3,10 @@ import Foundation
 final class CodexCLIService: AIServiceProtocol {
     let displayName = "Codex CLI (Local)"
     let requiresAPIKey = false
+    var modelName: String {
+        let selected = UserDefaults.standard.string(forKey: "codexModel") ?? ""
+        return selected.isEmpty ? "Provider default" : selected
+    }
 
     private let shell = ShellService.shared
 
