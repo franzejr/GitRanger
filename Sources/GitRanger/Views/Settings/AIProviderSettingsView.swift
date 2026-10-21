@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct AIProviderSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("aiProvider") private var aiProvider = AIProvider.claudeCode.rawValue
