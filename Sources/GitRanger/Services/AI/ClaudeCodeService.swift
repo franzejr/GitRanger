@@ -25,7 +25,7 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     private func resolveExecutable() async -> ExecutableResolution {
-        switch await ClaudeExecutableResolver().resolve(using: shell) {
+        switch await CLIExecutableResolver.claude.resolve(using: shell) {
         case .found(let path):
             return .available(path)
         case .configuredMissing(let path):
@@ -210,7 +210,7 @@ final class ClaudeCodeService: AIServiceProtocol {
         arguments: [String], env: [String: String],
         stdinData: Data, timeout: TimeInterval
     ) async throws -> ShellService.ShellResult {
-        let environment = ClaudeExecutableResolver.environment(env)
+        let environment = CLIExecutableResolver.environment(env)
         if binary.contains("/") {
             return try await shell.runDirect(
                 binary, arguments: arguments,

@@ -6,19 +6,9 @@ final class CodexCLIService: AIServiceProtocol {
 
     private let shell = ShellService.shared
 
-    private var codexBinary: String {
-        let custom = UserDefaults.standard.string(forKey: "codexPath") ?? ""
-        if !custom.isEmpty { return custom }
-
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let candidates = [
-            "\(home)/.local/bin/codex",
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex"
-        ]
-        return candidates.first {
-            FileManager.default.isExecutableFile(atPath: $0)
-        } ?? "codex"
+    private enum ExecutableResolution {
+        case available(String)
+        case unavailable(AIAvailabilityStatus)
     }
 
     func isAvailable() async -> Bool {
@@ -26,31 +16,40 @@ final class CodexCLIService: AIServiceProtocol {
     }
 
     func availabilityStatus() async -> AIAvailabilityStatus {
-        let binary = codexBinary
-        var resolvedBinary = binary
-
-        if binary.contains("/") {
-            guard FileManager.default.isExecutableFile(atPath: binary) else {
-                return AIAvailabilityStatus(
-                    isAvailable: false,
-                    detail: "The configured Codex executable is missing or not executable: \(binary)"
-                )
-            }
-        } else {
-            do {
-                resolvedBinary = try await shell.execute(
-                    "which", arguments: [binary], timeout: 5
-                ).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !resolvedBinary.isEmpty else {
-                    return unavailableExecutableStatus()
-                }
-            } catch {
-                return unavailableExecutableStatus()
-            }
+        switch await resolveExecutable() {
+        case .available(let binary):
+            return await authenticationStatus(binary: binary)
+        case .unavailable(let status):
+            return status
         }
+    }
 
+    private func resolveExecutable() async -> ExecutableResolution {
+        switch await CLIExecutableResolver.codex.resolve(using: shell) {
+        case .found(let path):
+            return .available(path)
+        case .configuredMissing(let path):
+            return .unavailable(missingConfiguredExecutableStatus(path))
+        case .notFound:
+            return .unavailable(unavailableExecutableStatus())
+        }
+    }
+
+    private func executablePath() async throws -> String {
+        switch await resolveExecutable() {
+        case .available(let binary):
+            return binary
+        case .unavailable(let status):
+            throw AIError.providerError(status.detail)
+        }
+    }
+
+    private func authenticationStatus(
+        binary: String
+    ) async -> AIAvailabilityStatus {
         do {
             let result = try await executeCodex(
+                binary,
                 arguments: ["login", "status"],
                 stdinData: nil,
                 cwd: nil,
@@ -64,12 +63,12 @@ final class CodexCLIService: AIServiceProtocol {
             }
             return AIAvailabilityStatus(
                 isAvailable: true,
-                detail: "Authenticated with Codex CLI at \(resolvedBinary)."
+                detail: "Authenticated with Codex CLI at \(binary)."
             )
         } catch {
             return AIAvailabilityStatus(
                 isAvailable: false,
-                detail: "Could not run Codex CLI at \(resolvedBinary): \(error.localizedDescription)"
+                detail: "Could not run Codex CLI at \(binary): \(error.localizedDescription)"
             )
         }
     }
@@ -84,6 +83,7 @@ final class CodexCLIService: AIServiceProtocol {
             diff: String(diff.prefix(12_000))
         )
         let output = try await runCodex(
+            binary: try await executablePath(),
             prompt: prompt,
             repoPath: configuredRepoPath(repoPath),
             timeout: 120
@@ -93,6 +93,7 @@ final class CodexCLIService: AIServiceProtocol {
 
     func generate(prompt: String, repoPath: URL?) async throws -> String {
         try await runCodex(
+            binary: try await executablePath(),
             prompt: prompt,
             repoPath: configuredRepoPath(repoPath),
             timeout: 300
@@ -101,7 +102,26 @@ final class CodexCLIService: AIServiceProtocol {
 
     // MARK: - Private
 
+    private func missingConfiguredExecutableStatus(
+        _ path: String
+    ) -> AIAvailabilityStatus {
+        AIAvailabilityStatus(
+            isAvailable: false,
+            detail: "The configured Codex executable is missing or not executable: \(path)"
+        )
+    }
+
+    private func unavailableExecutableStatus() -> AIAvailabilityStatus {
+        AIAvailabilityStatus(
+            isAvailable: false,
+            detail: "Codex CLI was not found in ~/.local/bin, Homebrew, "
+                + "/usr/local/bin, or your shell PATH. Install it, or set the "
+                + "executable path in Settings → Accounts → Codex CLI."
+        )
+    }
+
     private func runCodex(
+        binary: String,
         prompt: String,
         repoPath: URL?,
         timeout: TimeInterval
@@ -115,6 +135,7 @@ final class CodexCLIService: AIServiceProtocol {
         }
 
         let result = try await executeCodex(
+            binary,
             arguments: arguments(outputURL: outputURL, repoPath: repoPath),
             stdinData: stdinData,
             cwd: repoPath ?? FileManager.default.temporaryDirectory,
@@ -168,35 +189,31 @@ final class CodexCLIService: AIServiceProtocol {
         return useRepoContext ? repoPath : nil
     }
 
-    private func unavailableExecutableStatus() -> AIAvailabilityStatus {
-        AIAvailabilityStatus(
-            isAvailable: false,
-            detail: "Codex CLI was not found in the app PATH. "
-                + "Set its full executable path in Settings → Accounts → Codex CLI."
-        )
-    }
-
     private func executeCodex(
+        _ binary: String,
         arguments: [String],
         stdinData: Data?,
         cwd: URL?,
         timeout: TimeInterval
     ) async throws -> ShellService.ShellResult {
-        if codexBinary.contains("/") {
+        let environment = CLIExecutableResolver.environment(
+            ProcessInfo.processInfo.environment
+        )
+        if binary.contains("/") {
             return try await shell.runDirect(
-                codexBinary,
+                binary,
                 arguments: arguments,
                 cwd: cwd,
-                environment: ProcessInfo.processInfo.environment,
+                environment: environment,
                 stdinData: stdinData,
                 timeout: timeout
             )
         }
         return try await shell.run(
-            codexBinary,
+            binary,
             arguments: arguments,
             cwd: cwd,
-            environment: ProcessInfo.processInfo.environment,
+            environment: environment,
             stdinData: stdinData,
             timeout: timeout
         )

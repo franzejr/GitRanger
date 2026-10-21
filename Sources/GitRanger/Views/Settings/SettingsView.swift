@@ -132,12 +132,17 @@ struct SettingsView: View {
                             .foregroundStyle(GRTheme.muted(colorScheme))
                     }
                 }
-                settingsRow("Codex CLI") {
-                    pathField(
-                        value: $codexPath,
-                        placeholder: "Auto-detect codex",
-                        message: "Select codex"
-                    )
+                settingsRow("Codex CLI", alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        pathField(
+                            value: $codexPath,
+                            placeholder: "Auto-detect codex",
+                            message: "Select codex"
+                        )
+                        Text("Leave blank. GitRanger finds Codex CLI on this Mac.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(GRTheme.muted(colorScheme))
+                    }
                 }
                 settingsRow("GitHub CLI") {
                     pathField(value: $ghPath, placeholder: "Auto-detect gh", message: "Select gh")

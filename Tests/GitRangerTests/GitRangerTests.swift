@@ -181,7 +181,7 @@ final class AIModelsTests: XCTestCase {
 
     func testClaudeCandidatePathsCoverStandardInstalls() {
         XCTAssertEqual(
-            ClaudeExecutableLocator.candidatePaths(homeDirectory: "/Users/example"),
+            CLIExecutableLocator.claude.candidatePaths(homeDirectory: "/Users/example"),
             [
                 "/Users/example/.local/bin/claude",
                 "/Users/example/.claude/local/claude",
@@ -195,7 +195,7 @@ final class AIModelsTests: XCTestCase {
         let home = "/Users/example"
         let native = "\(home)/.local/bin/claude"
         let homebrew = "/opt/homebrew/bin/claude"
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: "",
             homeDirectory: home,
             isExecutable: { $0 == native || $0 == homebrew }
@@ -205,7 +205,7 @@ final class AIModelsTests: XCTestCase {
 
     func testClaudeAutoDetectUsesHomebrewWhenNativeInstallIsMissing() {
         let homebrew = "/opt/homebrew/bin/claude"
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: "   ",
             homeDirectory: "/Users/example",
             isExecutable: { $0 == homebrew }
@@ -215,7 +215,7 @@ final class AIModelsTests: XCTestCase {
 
     func testClaudeConfiguredPathIsNotReplacedByAutoDetect() {
         let configured = "/custom/claude"
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: configured,
             homeDirectory: "/Users/example",
             isExecutable: { $0 == configured || $0.hasSuffix("/.local/bin/claude") }
@@ -225,7 +225,7 @@ final class AIModelsTests: XCTestCase {
 
     func testClaudeConfiguredMissingPathDoesNotFallBack() {
         let configured = "/missing/claude"
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: configured,
             homeDirectory: "/Users/example",
             isExecutable: { $0.hasSuffix("/.local/bin/claude") }
@@ -235,7 +235,7 @@ final class AIModelsTests: XCTestCase {
 
     func testClaudeAutoDetectUsesShellPathWhenInstallLocationsMiss() {
         let shellPath = "/Users/example/.nvm/versions/node/v20.19.6/bin/claude"
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: "",
             homeDirectory: "/Users/example",
             isExecutable: { $0 == shellPath },
@@ -245,7 +245,7 @@ final class AIModelsTests: XCTestCase {
     }
 
     func testClaudeAutoDetectReportsNotFoundWithoutAFallback() {
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: "",
             homeDirectory: "/Users/example",
             isExecutable: { _ in false },
@@ -260,21 +260,21 @@ final class AIModelsTests: XCTestCase {
         /Users/example/.local/bin/claude
         """
         XCTAssertEqual(
-            ClaudeExecutableLocator.executablePath(fromLoginShellOutput: output),
+            CLIExecutableLocator.claude.executablePath(fromLoginShellOutput: output),
             "/Users/example/.local/bin/claude"
         )
     }
 
     func testClaudeLoginShellOutputRejectsNonClaudePaths() {
         XCTAssertNil(
-            ClaudeExecutableLocator.executablePath(
+            CLIExecutableLocator.claude.executablePath(
                 fromLoginShellOutput: "/Users/example/.oh-my-zsh/tools/check"
             )
         )
     }
 
     func testClaudeAugmentedPathAddsInstallLocations() {
-        let path = ClaudeExecutableLocator.augmentedPath(
+        let path = CLIExecutableLocator.augmentedPath(
             "/usr/bin:/bin",
             homeDirectory: "/Users/example"
         )
@@ -285,7 +285,7 @@ final class AIModelsTests: XCTestCase {
     }
 
     func testClaudeAugmentedPathDoesNotDuplicateEntries() {
-        let path = ClaudeExecutableLocator.augmentedPath(
+        let path = CLIExecutableLocator.augmentedPath(
             "/opt/homebrew/bin:/usr/bin",
             homeDirectory: "/Users/example"
         )
@@ -296,12 +296,89 @@ final class AIModelsTests: XCTestCase {
 
     func testClaudeAutoDetectFindsInstalledBinaryWhenPresent() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let lookup = ClaudeExecutableLocator.resolve(
+        let lookup = CLIExecutableLocator.claude.resolve(
             configuredPath: "",
             homeDirectory: home,
             isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }
         )
-        let installed = ClaudeExecutableLocator.candidatePaths(homeDirectory: home)
+        let installed = CLIExecutableLocator.claude.candidatePaths(homeDirectory: home)
+            .filter { FileManager.default.isExecutableFile(atPath: $0) }
+        if let expected = installed.first {
+            XCTAssertEqual(lookup, .found(expected))
+        } else {
+            XCTAssertEqual(lookup, .notFound)
+        }
+    }
+
+    func testCodexCandidatePathsCoverStandardInstalls() {
+        XCTAssertEqual(
+            CLIExecutableLocator.codex.candidatePaths(homeDirectory: "/Users/example"),
+            [
+                "/Users/example/.local/bin/codex",
+                "/Users/example/.codex/packages/standalone/current/bin/codex",
+                "/opt/homebrew/bin/codex",
+                "/usr/local/bin/codex"
+            ]
+        )
+    }
+
+    func testCodexAutoDetectPrefersLocalBinOverStandalonePackage() {
+        let home = "/Users/example"
+        let localBin = "\(home)/.local/bin/codex"
+        let standalone = "\(home)/.codex/packages/standalone/current/bin/codex"
+        let lookup = CLIExecutableLocator.codex.resolve(
+            configuredPath: "",
+            homeDirectory: home,
+            isExecutable: { $0 == localBin || $0 == standalone }
+        )
+        XCTAssertEqual(lookup, .found(localBin))
+    }
+
+    func testCodexAutoDetectUsesShellPathWhenInstallLocationsMiss() {
+        let shellPath = "/Users/example/.local/share/mise/shims/codex"
+        let lookup = CLIExecutableLocator.codex.resolve(
+            configuredPath: "",
+            homeDirectory: "/Users/example",
+            isExecutable: { $0 == shellPath },
+            fallbackPath: shellPath
+        )
+        XCTAssertEqual(lookup, .found(shellPath))
+    }
+
+    func testCodexLoginShellOutputIgnoresClaudePath() {
+        let output = """
+        /Users/example/.local/bin/claude
+        /Users/example/.local/bin/codex
+        """
+        XCTAssertEqual(
+            CLIExecutableLocator.codex.executablePath(fromLoginShellOutput: output),
+            "/Users/example/.local/bin/codex"
+        )
+        XCTAssertNil(
+            CLIExecutableLocator.codex.executablePath(
+                fromLoginShellOutput: "/Users/example/.local/bin/claude"
+            )
+        )
+    }
+
+    func testCodexConfiguredMissingPathDoesNotFallBack() {
+        let configured = "/missing/codex"
+        let lookup = CLIExecutableLocator.codex.resolve(
+            configuredPath: configured,
+            homeDirectory: "/Users/example",
+            isExecutable: { $0.hasSuffix("/.local/bin/codex") }
+        )
+        XCTAssertEqual(lookup, .configuredMissing(configured))
+    }
+
+    func testCodexAutoDetectFindsInstalledBinaryWhenPresent() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let lookup = CLIExecutableLocator.codex.resolve(
+            configuredPath: "",
+            homeDirectory: home,
+            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }
+        )
+        let installed = CLIExecutableLocator.codex.candidatePaths(homeDirectory: home)
             .filter { FileManager.default.isExecutableFile(atPath: $0) }
         if let expected = installed.first {
             XCTAssertEqual(lookup, .found(expected))
