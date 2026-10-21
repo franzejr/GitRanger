@@ -179,6 +179,137 @@ final class AIModelsTests: XCTestCase {
         )
     }
 
+    func testClaudeCandidatePathsCoverStandardInstalls() {
+        XCTAssertEqual(
+            ClaudeExecutableLocator.candidatePaths(homeDirectory: "/Users/example"),
+            [
+                "/Users/example/.local/bin/claude",
+                "/Users/example/.claude/local/claude",
+                "/opt/homebrew/bin/claude",
+                "/usr/local/bin/claude"
+            ]
+        )
+    }
+
+    func testClaudeAutoDetectPrefersNativeInstallOverHomebrew() {
+        let home = "/Users/example"
+        let native = "\(home)/.local/bin/claude"
+        let homebrew = "/opt/homebrew/bin/claude"
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: "",
+            homeDirectory: home,
+            isExecutable: { $0 == native || $0 == homebrew }
+        )
+        XCTAssertEqual(lookup, .found(native))
+    }
+
+    func testClaudeAutoDetectUsesHomebrewWhenNativeInstallIsMissing() {
+        let homebrew = "/opt/homebrew/bin/claude"
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: "   ",
+            homeDirectory: "/Users/example",
+            isExecutable: { $0 == homebrew }
+        )
+        XCTAssertEqual(lookup, .found(homebrew))
+    }
+
+    func testClaudeConfiguredPathIsNotReplacedByAutoDetect() {
+        let configured = "/custom/claude"
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: configured,
+            homeDirectory: "/Users/example",
+            isExecutable: { $0 == configured || $0.hasSuffix("/.local/bin/claude") }
+        )
+        XCTAssertEqual(lookup, .found(configured))
+    }
+
+    func testClaudeConfiguredMissingPathDoesNotFallBack() {
+        let configured = "/missing/claude"
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: configured,
+            homeDirectory: "/Users/example",
+            isExecutable: { $0.hasSuffix("/.local/bin/claude") }
+        )
+        XCTAssertEqual(lookup, .configuredMissing(configured))
+    }
+
+    func testClaudeAutoDetectUsesShellPathWhenInstallLocationsMiss() {
+        let shellPath = "/Users/example/.nvm/versions/node/v20.19.6/bin/claude"
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: "",
+            homeDirectory: "/Users/example",
+            isExecutable: { $0 == shellPath },
+            fallbackPath: shellPath
+        )
+        XCTAssertEqual(lookup, .found(shellPath))
+    }
+
+    func testClaudeAutoDetectReportsNotFoundWithoutAFallback() {
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: "",
+            homeDirectory: "/Users/example",
+            isExecutable: { _ in false },
+            fallbackPath: "claude"
+        )
+        XCTAssertEqual(lookup, .notFound)
+    }
+
+    func testClaudeLoginShellOutputIgnoresStartupNoise() {
+        let output = """
+        oh-my-zsh loaded /Users/example/.oh-my-zsh
+        /Users/example/.local/bin/claude
+        """
+        XCTAssertEqual(
+            ClaudeExecutableLocator.executablePath(fromLoginShellOutput: output),
+            "/Users/example/.local/bin/claude"
+        )
+    }
+
+    func testClaudeLoginShellOutputRejectsNonClaudePaths() {
+        XCTAssertNil(
+            ClaudeExecutableLocator.executablePath(
+                fromLoginShellOutput: "/Users/example/.oh-my-zsh/tools/check"
+            )
+        )
+    }
+
+    func testClaudeAugmentedPathAddsInstallLocations() {
+        let path = ClaudeExecutableLocator.augmentedPath(
+            "/usr/bin:/bin",
+            homeDirectory: "/Users/example"
+        )
+        XCTAssertEqual(
+            path,
+            "/Users/example/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        )
+    }
+
+    func testClaudeAugmentedPathDoesNotDuplicateEntries() {
+        let path = ClaudeExecutableLocator.augmentedPath(
+            "/opt/homebrew/bin:/usr/bin",
+            homeDirectory: "/Users/example"
+        )
+        let homebrewEntries = path.split(separator: ":").filter { $0 == "/opt/homebrew/bin" }
+        XCTAssertEqual(homebrewEntries.count, 1)
+        XCTAssertTrue(path.contains("/Users/example/.local/bin"))
+    }
+
+    func testClaudeAutoDetectFindsInstalledBinaryWhenPresent() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let lookup = ClaudeExecutableLocator.resolve(
+            configuredPath: "",
+            homeDirectory: home,
+            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }
+        )
+        let installed = ClaudeExecutableLocator.candidatePaths(homeDirectory: home)
+            .filter { FileManager.default.isExecutableFile(atPath: $0) }
+        if let expected = installed.first {
+            XCTAssertEqual(lookup, .found(expected))
+        } else {
+            XCTAssertEqual(lookup, .notFound)
+        }
+    }
+
     func testClaudeCustomModelIsUsedWhenSelected() {
         XCTAssertEqual(
             ClaudeCodeService.resolvedModel(

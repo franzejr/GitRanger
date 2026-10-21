@@ -11,11 +11,6 @@ final class ClaudeCodeService: AIServiceProtocol {
         case unavailable(AIAvailabilityStatus)
     }
 
-    private var claudeBinary: String {
-        let custom = UserDefaults.standard.string(forKey: "claudePath") ?? ""
-        return custom.isEmpty ? "claude" : custom
-    }
-
     func isAvailable() async -> Bool {
         await availabilityStatus().isAvailable
     }
@@ -30,29 +25,22 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     private func resolveExecutable() async -> ExecutableResolution {
-        let binary = claudeBinary
-        if binary != "claude" {
-            guard FileManager.default.isExecutableFile(atPath: binary) else {
-                return .unavailable(AIAvailabilityStatus(
-                    isAvailable: false,
-                    detail: "The configured Claude executable is missing or not executable: \(binary)"
-                ))
-            }
-            return .available(binary)
-        }
-
-        do {
-            let output = try await shell.execute(
-                "which", arguments: ["claude"], timeout: 5
-            )
-            let resolved = output.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            return resolved.isEmpty
-                ? .unavailable(unavailableExecutableStatus())
-                : .available(resolved)
-        } catch {
+        switch await ClaudeExecutableResolver().resolve(using: shell) {
+        case .found(let path):
+            return .available(path)
+        case .configuredMissing(let path):
+            return .unavailable(missingConfiguredExecutableStatus(path))
+        case .notFound:
             return .unavailable(unavailableExecutableStatus())
+        }
+    }
+
+    private func executablePath() async throws -> String {
+        switch await resolveExecutable() {
+        case .available(let binary):
+            return binary
+        case .unavailable(let status):
+            throw AIError.providerError(status.detail)
         }
     }
 
@@ -61,6 +49,7 @@ final class ClaudeCodeService: AIServiceProtocol {
     ) async -> AIAvailabilityStatus {
         do {
             let result = try await executeClaudeBinary(
+                binary,
                 arguments: ["auth", "status"],
                 env: ProcessInfo.processInfo.environment,
                 stdinData: Data(),
@@ -104,6 +93,7 @@ final class ClaudeCodeService: AIServiceProtocol {
         diff: String,
         repoPath: URL?
     ) async throws -> CommitSummary {
+        let binary = try await executablePath()
         let useRepoContext = UserDefaults.standard.object(
             forKey: "claudeRepoContext"
         ) as? Bool ?? true
@@ -114,6 +104,7 @@ final class ClaudeCodeService: AIServiceProtocol {
         )
 
         let output = try await runClaude(
+            binary: binary,
             prompt: prompt,
             repoPath: useRepoContext ? repoPath : nil,
             timeout: 90,
@@ -124,10 +115,12 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     func generate(prompt: String, repoPath: URL?) async throws -> String {
+        let binary = try await executablePath()
         let useRepoContext = UserDefaults.standard.object(
             forKey: "claudeRepoContext"
         ) as? Bool ?? true
         return try await runClaude(
+            binary: binary,
             prompt: prompt,
             repoPath: useRepoContext ? repoPath : nil,
             timeout: 300,
@@ -137,16 +130,26 @@ final class ClaudeCodeService: AIServiceProtocol {
 
     // MARK: - Private
 
-    private func unavailableExecutableStatus() -> AIAvailabilityStatus {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? "(not set)"
-        return AIAvailabilityStatus(
+    private func missingConfiguredExecutableStatus(
+        _ path: String
+    ) -> AIAvailabilityStatus {
+        AIAvailabilityStatus(
             isAvailable: false,
-            detail: "Claude Code was not found in the app PATH (\(path)). "
-                + "Set its full executable path in Settings → Accounts → Claude Code."
+            detail: "The configured Claude executable is missing or not executable: \(path)"
+        )
+    }
+
+    private func unavailableExecutableStatus() -> AIAvailabilityStatus {
+        AIAvailabilityStatus(
+            isAvailable: false,
+            detail: "Claude Code was not found in ~/.local/bin, Homebrew, "
+                + "/usr/local/bin, or your shell PATH. Install it, or set the "
+                + "executable path in Settings → Accounts → Claude Code."
         )
     }
 
     private func runClaude(
+        binary: String,
         prompt: String,
         repoPath: URL?,
         timeout: TimeInterval,
@@ -164,6 +167,7 @@ final class ClaudeCodeService: AIServiceProtocol {
         }
 
         let result = try await executeClaudeBinary(
+            binary,
             arguments: arguments, env: env,
             stdinData: stdinData, timeout: timeout
         )
@@ -202,20 +206,21 @@ final class ClaudeCodeService: AIServiceProtocol {
     }
 
     private func executeClaudeBinary(
+        _ binary: String,
         arguments: [String], env: [String: String],
         stdinData: Data, timeout: TimeInterval
     ) async throws -> ShellService.ShellResult {
-        let binary = claudeBinary
+        let environment = ClaudeExecutableResolver.environment(env)
         if binary.contains("/") {
             return try await shell.runDirect(
                 binary, arguments: arguments,
-                environment: env, stdinData: stdinData,
+                environment: environment, stdinData: stdinData,
                 timeout: timeout
             )
         }
         return try await shell.run(
             binary, arguments: arguments,
-            environment: env, stdinData: stdinData,
+            environment: environment, stdinData: stdinData,
             timeout: timeout
         )
     }

@@ -120,12 +120,17 @@ struct SettingsView: View {
             subtitle: "Configure GitHub and GitLab command-line access."
         ) {
             settingsCard {
-                settingsRow("Claude Code") {
-                    pathField(
-                        value: $claudePath,
-                        placeholder: "Auto-detect claude",
-                        message: "Select claude"
-                    )
+                settingsRow("Claude Code", alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        pathField(
+                            value: $claudePath,
+                            placeholder: "Auto-detect claude",
+                            message: "Select claude"
+                        )
+                        Text("Leave blank. GitRanger finds Claude Code on this Mac.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(GRTheme.muted(colorScheme))
+                    }
                 }
                 settingsRow("Codex CLI") {
                     pathField(
