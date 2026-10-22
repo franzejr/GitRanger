@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct PRListView: View {
     @Bindable var viewModel: PRListViewModel
     @Environment(\.colorScheme) private var colorScheme
