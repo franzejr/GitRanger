@@ -41,7 +41,7 @@ This is where GitRanger really shines. Instead of a single reviewer, launch **fi
 | **Code Quality** | Naming, SOLID principles, readability |
 | **Bug Detector** | Edge cases, nil handling, race conditions |
 
-All five run concurrently, so you get a multi-perspective review in the time it takes for one. Each agent reports a verdict — **Passed** or **Issues Found** — with a detailed explanation you can expand inline.
+The agents are scheduled concurrently with bounded capacity, keeping the app responsive while reviews run in the background. Each agent reports a verdict — **Passed** or **Issues Found** — with a detailed explanation you can expand inline.
 
 **Fully customizable per repository:**
 
@@ -166,6 +166,7 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 - **Paginated loading** — Scroll through thousands of commits smoothly
 - **GitHub-style diffs** — Color-coded additions/deletions with syntax highlighting
 - **Review caching** — Reviews are cached by PR + head SHA so you never pay twice
+- **Instant PR revisits** — Cached PR lists and content render immediately while fresh data loads in the background
 - **Dark mode** — Full light and dark mode support
 - **SwiftData persistence** — All repos, commits, and reviews persist across sessions
 - **Menu bar icon** — Quick status and manual sync from the menu bar
@@ -195,7 +196,7 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 | **Build & Lint** | Push/PR to main | `swift build`, `swift test`, SwiftLint |
 | **Dependency Check** | Package.swift changes + weekly | Resolves and validates the Swift package graph |
 | **GitHub Pages** | Website changes on main | Publishes the landing page to GitHub Pages |
-| **Release** | Tag `v*` | Builds .app bundle, creates GitHub Release |
+| **Release** | Successful main CI or tag `v*` | Builds .app bundle and creates a GitHub Release |
 
 ## Documentation
 

@@ -47,7 +47,7 @@ final class RoutineEngine {
         updateBackgroundActivity()
         schedulePolling()
         Task { [weak self] in
-            await self?.backfillMissingRunAuthors()
+            await self?.backfillMissingRunMetadata()
         }
     }
 

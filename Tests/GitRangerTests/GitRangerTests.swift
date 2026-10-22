@@ -851,7 +851,9 @@ final class AIWorkCoordinatorTests: XCTestCase {
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<6 {
                 group.addTask {
-                    await coordinator.acquire()
+                    guard (try? await coordinator.acquire()) != nil else {
+                        return
+                    }
                     await probe.enter()
                     try? await Task.sleep(for: .milliseconds(20))
                     await probe.leave()
@@ -862,6 +864,29 @@ final class AIWorkCoordinatorTests: XCTestCase {
 
         let peak = await probe.peak
         XCTAssertEqual(peak, 2)
+    }
+
+    func testCancelledRoutineWaiterNeverStartsLater() async throws {
+        let coordinator = RoutineExecutionCoordinator(maxConcurrentRuns: 1)
+        try await coordinator.acquire()
+
+        let waiting = Task {
+            try await coordinator.acquire()
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        waiting.cancel()
+        await coordinator.release()
+
+        do {
+            try await waiting.value
+            await coordinator.release()
+            XCTFail("A cancelled routine must not acquire a later slot")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        try await coordinator.acquire()
+        await coordinator.release()
     }
 }
 
@@ -1175,6 +1200,37 @@ final class ReviewRoutineTests: XCTestCase {
         XCTAssertEqual(run.agentSnapshots, [snapshot])
         XCTAssertEqual(run.prAuthorLogin, "author")
         XCTAssertEqual(run.prCreatedAt, pullRequest.createdAt)
+    }
+
+    @MainActor
+    func testRunMetadataBackfillOnlyTargetsInvalidMetadata() throws {
+        let container = try makeModelContainer()
+        let routine = makeRoutine()
+        let repo = makeRepo()
+        container.mainContext.insert(routine)
+        container.mainContext.insert(repo)
+        let run = RoutineRun(
+            routine: routine,
+            repo: repo,
+            pullRequest: makePullRequest(sha: "metadata"),
+            trigger: .manual
+        )
+        container.mainContext.insert(run)
+
+        XCTAssertFalse(run.needsMetadataBackfill)
+
+        run.prAuthorLogin = nil
+        XCTAssertTrue(run.needsMetadataBackfill)
+
+        run.prAuthorLogin = "author"
+        run.prCreatedAt = run.queuedAt.addingTimeInterval(1)
+        XCTAssertTrue(run.needsMetadataBackfill)
+
+        run.prCreatedAt = Date(timeIntervalSince1970: 0)
+        XCTAssertTrue(run.needsMetadataBackfill)
+
+        run.metadataBackfillAttemptedAt = Date()
+        XCTAssertFalse(run.needsMetadataBackfill)
     }
 
     func testProviderModelOverridesAreReported() {

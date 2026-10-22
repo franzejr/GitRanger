@@ -37,9 +37,9 @@ struct PRListView: View {
             .frame(maxHeight: .infinity)
         }
         .background(GRTheme.background(colorScheme))
-        .onAppear {
-            guard let repo, viewModel.pullRequests.isEmpty else { return }
-            Task { await viewModel.loadPullRequests(repo: repo) }
+        .task(id: listLoadID) {
+            guard let repo else { return }
+            await viewModel.loadPullRequests(repo: repo)
         }
         .onChange(of: repo?.id) { _, _ in
             selectedPRNumber = nil
@@ -87,6 +87,15 @@ struct PRListView: View {
         return "\(repo?.id.uuidString ?? "none"):\(heads.joined(separator: ","))"
     }
 
+    private var listLoadID: String {
+        [
+            repo?.id.uuidString ?? "none",
+            viewModel.filterMode.rawValue,
+            repo?.ghAccount ?? "default",
+            repo?.glHost ?? "default"
+        ].joined(separator: ":")
+    }
+
     private var emptyMessage: String {
         let label = viewModel.isGitLabRepo ? "merge requests" : "pull requests"
         switch viewModel.filterMode {
@@ -104,8 +113,6 @@ struct PRListView: View {
                     guard mode != viewModel.filterMode else { return }
                     viewModel.filterMode = mode
                     selectedPRNumber = nil
-                    guard let repo else { return }
-                    Task { await viewModel.refresh(repo: repo) }
                 } label: {
                     VStack(spacing: 4) {
                         HStack(spacing: 3) {
@@ -130,6 +137,23 @@ struct PRListView: View {
             }
 
             Spacer(minLength: 4)
+
+            if viewModel.isLoading && !viewModel.pullRequests.isEmpty {
+                ProgressView()
+                    .controlSize(.mini)
+                    .help("Refreshing pull requests")
+            } else if viewModel.isShowingCachedResults {
+                Text("CACHED")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(GRTheme.muted(colorScheme))
+            }
+
+            if let refreshError = viewModel.refreshError {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(GRTheme.warning)
+                    .help("Refresh failed: \(refreshError)")
+            }
 
             if let currentUser {
                 Text(currentUser)
@@ -169,7 +193,7 @@ struct PRListView: View {
                 ForEach(viewModel.ghAccounts, id: \.self) { account in
                     Button(account) {
                         repo.ghAccount = account
-                        Task { await viewModel.refresh(repo: repo) }
+                        viewModel.currentGhUser = nil
                     }
                 }
             }
@@ -179,7 +203,7 @@ struct PRListView: View {
                 ForEach(viewModel.glHosts, id: \.self) { host in
                     Button(host) {
                         repo.glHost = host
-                        Task { await viewModel.refresh(repo: repo) }
+                        viewModel.currentGlUser = nil
                     }
                 }
             }

@@ -75,6 +75,19 @@ test: add tests for commit parser
 swift test
 ```
 
+### Performance Benchmarks
+
+Run the opt-in performance suite in release mode before and after changing a
+latency-sensitive path:
+
+```bash
+scripts/benchmark
+```
+
+The regular test suite skips performance measurements so machine-dependent
+timings do not make CI flaky. Compare results on the same Mac with other apps
+and background review work kept consistent.
+
 ## Pull Request Process
 
 1. Update documentation if needed

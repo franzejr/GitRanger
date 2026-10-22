@@ -189,6 +189,7 @@ final class RoutineRun {
     var prTitle: String
     var prAuthorLogin: String?
     var prCreatedAt: Date?
+    var metadataBackfillAttemptedAt: Date?
     var prURL: String
     var headSHA: String
     var triggerRawValue: String
@@ -240,6 +241,16 @@ final class RoutineRun {
             prNumber: prNumber,
             headSHA: headSHA
         )
+    }
+
+    var needsMetadataBackfill: Bool {
+        guard metadataBackfillAttemptedAt == nil else { return false }
+        guard let author = prAuthorLogin, !author.isEmpty,
+              let prCreatedAt else {
+            return true
+        }
+        let earliestSupportedDate = Date(timeIntervalSince1970: 946_684_800)
+        return prCreatedAt < earliestSupportedDate || prCreatedAt > queuedAt
     }
 
     init(

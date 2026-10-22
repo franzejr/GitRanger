@@ -62,15 +62,7 @@ final class GitHubService {
                 "which", arguments: ["gh"],
                 environment: baseShellEnv()
             )
-            guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return false
-            }
-            let result = try await runGh(
-                arguments: ["auth", "status"],
-                environment: baseShellEnv(),
-                timeout: 10
-            )
-            return result.exitCode == 0
+            return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } catch {
             return false
         }

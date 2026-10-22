@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$PROJECT_ROOT"
+
+echo "Building and running GitRanger performance benchmarks in release mode..."
+RUN_PERFORMANCE_TESTS=1 swift test \
+    -c release \
+    --filter PerformanceBenchmarkTests

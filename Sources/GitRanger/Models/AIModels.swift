@@ -283,12 +283,12 @@ struct CommitDiff {
 
 // MARK: - Pull Request Types
 
-struct PRReviewStatus: Sendable {
+struct PRReviewStatus: Codable, Sendable {
     let login: String
     let state: String // APPROVED, CHANGES_REQUESTED, COMMENTED, PENDING
 }
 
-struct PullRequest: Identifiable, Sendable {
+struct PullRequest: Codable, Identifiable, Sendable {
     let number: Int
     let title: String
     let authorLogin: String

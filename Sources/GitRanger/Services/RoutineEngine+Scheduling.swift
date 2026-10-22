@@ -30,8 +30,9 @@ extension RoutineEngine {
         isPolling = false
     }
 
-    func backfillMissingRunAuthors() async {
-        let repoIDs = Set(runs.map(\.repoID))
+    func backfillMissingRunMetadata() async {
+        let runsNeedingBackfill = runs.filter(\.needsMetadataBackfill)
+        let repoIDs = Set(runsNeedingBackfill.map(\.repoID))
         guard !repoIDs.isEmpty else { return }
 
         var changed = false
@@ -45,17 +46,17 @@ extension RoutineEngine {
                     ("\($0.number):\($0.headRefOid)", $0)
                 }
             )
-            for run in runs where run.repoID == repo.id {
+            for run in runsNeedingBackfill where run.repoID == repo.id {
                 let key = "\(run.prNumber):\(run.headSHA)"
-                guard let pullRequest = pullRequestsByIdentity[key] else { continue }
-                if run.prAuthorLogin == nil, !pullRequest.authorLogin.isEmpty {
-                    run.prAuthorLogin = pullRequest.authorLogin
-                    changed = true
-                }
-                if run.prCreatedAt != pullRequest.createdAt {
+                if let pullRequest = pullRequestsByIdentity[key] {
+                    if run.prAuthorLogin == nil,
+                       !pullRequest.authorLogin.isEmpty {
+                        run.prAuthorLogin = pullRequest.authorLogin
+                    }
                     run.prCreatedAt = pullRequest.createdAt
-                    changed = true
                 }
+                run.metadataBackfillAttemptedAt = Date()
+                changed = true
             }
         }
         if changed { persistAndRefresh() }
@@ -76,7 +77,7 @@ extension RoutineEngine {
                     for: repo,
                     scope: routine.scope
                 )
-                updateRunAuthors(from: pullRequests, repositoryID: repo.id)
+                updateRunMetadata(from: pullRequests, repositoryID: repo.id)
                 let candidates = pullRequests.filter {
                     !routine.skipDrafts || !$0.isDraft
                 }
@@ -114,7 +115,7 @@ extension RoutineEngine {
         persistAndRefresh()
     }
 
-    private func updateRunAuthors(
+    private func updateRunMetadata(
         from pullRequests: [PullRequest],
         repositoryID: UUID
     ) {
@@ -124,7 +125,7 @@ extension RoutineEngine {
             }
         )
         for run in runs where run.repoID == repositoryID
-            && (run.prAuthorLogin == nil || run.prCreatedAt == nil) {
+            && run.needsMetadataBackfill {
             let key = "\(run.prNumber):\(run.headSHA)"
             guard let pullRequest = pullRequestsByIdentity[key] else { continue }
             if run.prAuthorLogin == nil, !pullRequest.authorLogin.isEmpty {

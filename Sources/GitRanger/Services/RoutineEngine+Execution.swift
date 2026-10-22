@@ -5,19 +5,39 @@ actor RoutineExecutionCoordinator {
 
     private let maxConcurrentRuns: Int
     private var activeRuns = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    private var waiters: [Waiter] = []
 
     init(maxConcurrentRuns: Int) {
         self.maxConcurrentRuns = max(1, maxConcurrentRuns)
     }
 
-    func acquire() async {
-        if activeRuns < maxConcurrentRuns {
-            activeRuns += 1
-            return
+    func acquire() async throws {
+        try Task.checkCancellation()
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            let _: Void = try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if activeRuns < maxConcurrentRuns {
+                    activeRuns += 1
+                    continuation.resume()
+                } else {
+                    waiters.append(Waiter(
+                        id: waiterID,
+                        continuation: continuation
+                    ))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(waiterID) }
         }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        if Task.isCancelled {
+            release()
+            throw CancellationError()
         }
     }
 
@@ -25,8 +45,17 @@ actor RoutineExecutionCoordinator {
         if waiters.isEmpty {
             activeRuns = max(0, activeRuns - 1)
         } else {
-            waiters.removeFirst().resume()
+            waiters.removeFirst().continuation.resume()
         }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        waiters.remove(at: index).continuation.resume(
+            throwing: CancellationError()
+        )
     }
 }
 
@@ -38,10 +67,13 @@ extension RoutineEngine {
     ) {
         let task = Task { [weak self] in
             guard let self else { return }
-            await RoutineExecutionCoordinator.shared.acquire()
-            guard !Task.isCancelled else {
+            do {
+                try await RoutineExecutionCoordinator.shared.acquire()
+            } catch is CancellationError {
                 self.markCancelled(runID)
-                await RoutineExecutionCoordinator.shared.release()
+                return
+            } catch {
+                self.fail(runID, message: error.localizedDescription)
                 return
             }
             await self.execute(runID: runID, request: request)

@@ -1,9 +1,14 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - macOS Build & Lint
+    types:
+      - completed
     branches:
       - main
+  push:
     tags:
       - 'v*'
 
@@ -12,19 +17,25 @@ permissions:
 
 jobs:
   release:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push' && github.ref_type == 'tag')
     name: Build & Release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Determine version
         id: version
         run: |
           BUILD=$(git rev-list --count HEAD)
 
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+          if [ "${{ github.event_name }}" = "push" ] && \
+             [ "$GITHUB_REF_TYPE" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
             TAG="$GITHUB_REF_NAME"
           else
@@ -50,7 +61,8 @@ jobs:
         run: |
           CURRENT_TAG="${{ steps.version.outputs.TAG }}"
 
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+          if [ "${{ github.event_name }}" = "push" ] && \
+             [ "$GITHUB_REF_TYPE" = "tag" ]; then
             # Stable releases describe everything since the prior stable tag.
             PREV_TAG=$(git tag --sort=-version:refname \
               | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \

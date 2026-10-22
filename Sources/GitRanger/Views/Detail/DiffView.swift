@@ -130,7 +130,7 @@ private enum DiffSide: Sendable {
     case new
 }
 
-private struct DiffLine: Sendable {
+struct DiffLine: Sendable {
     enum Kind: Sendable {
         case addition
         case deletion
@@ -149,14 +149,14 @@ private struct DiffLine: Sendable {
         kind == .deletion ? oldNumber : newNumber
     }
 
-    func number(for side: DiffSide) -> String? {
+    fileprivate func number(for side: DiffSide) -> String? {
         switch side {
         case .old: oldNumber
         case .new: newNumber
         }
     }
 
-    func isVisible(on side: DiffSide) -> Bool {
+    fileprivate func isVisible(on side: DiffSide) -> Bool {
         switch kind {
         case .addition:
             side == .new
@@ -170,7 +170,7 @@ private struct DiffLine: Sendable {
     }
 }
 
-private enum DiffParser {
+enum DiffParser {
     static func parse(_ diff: String) -> [DiffLine] {
         var oldLine: Int?
         var newLine: Int?
