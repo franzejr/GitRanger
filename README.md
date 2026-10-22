@@ -116,6 +116,23 @@ swift build -c release
 .build/release/GitRanger
 ```
 
+### Terminal client
+
+The independent Go terminal client combines a responsive dashboard with a
+durable headless daemon. Review routines continue through the
+`Poll → Review → Post` pipeline after the TUI closes.
+
+```bash
+cd cli
+go build -o gitranger ./cmd/gitranger
+./gitranger config init --repo https://github.com/owner/repository.git
+./gitranger doctor
+./gitranger
+```
+
+See [Terminal client](cli/README.md) for commands, service installation,
+configuration, and current platform support.
+
 ### Setting Up Claude Code (Recommended)
 
 ```bash
