@@ -290,15 +290,30 @@ enum RoutineRunPolicy {
     static func shouldEnqueue(
         _ identity: RoutineRunIdentity,
         existingRuns: [RoutineRun],
-        allowRetry: Bool = false
+        allowRetry: Bool = false,
+        now: Date = Date()
     ) -> Bool {
         if allowRetry { return true }
-        return !existingRuns.contains {
-            $0.identity == identity && (
-                $0.status.isActive
-                    || $0.status == .completed
-                    || $0.status == .posted
-            )
-        }
+        let matching = existingRuns.filter { $0.identity == identity }
+        guard !matching.contains(where: {
+            $0.status.isActive || $0.status == .completed || $0.status == .posted || $0.status == .cancelled
+        }) else { return false }
+        let failures = matching.filter { $0.status == .failed }
+        guard let latest = failures.max(by: { $0.queuedAt < $1.queuedAt }) else { return true }
+        guard failures.count < 3,
+              isTransientFailure(latest.errorMessage ?? "") else { return false }
+        let delay: TimeInterval = failures.count == 1 ? 300 : 900
+        return now.timeIntervalSince(latest.completedAt ?? latest.queuedAt) >= delay
+    }
+
+    static func isTransientFailure(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        guard !GitHubPRDiffLoader.isTooLarge(lower),
+              !lower.contains("incomplete pr diff") else { return false }
+        return [
+            "timed out", "timeout", "http 429", "http 500", "http 502", "http 503", "http 504",
+            "rate limit", "connection reset", "network", "offline", "could not resolve",
+            "changed while downloading", "app stopped before"
+        ].contains { lower.contains($0) }
     }
 }

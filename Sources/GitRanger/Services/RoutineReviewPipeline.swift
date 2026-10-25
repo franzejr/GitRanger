@@ -133,7 +133,7 @@ actor RoutineReviewPipeline {
         await progress(.run(.aggregating, "Combining agent findings"))
         return RoutinePipelineOutput(
             agents: results,
-            comment: Self.buildComment(request: request, agents: results)
+            comment: Self.buildComment(request: request, agents: results, diff: content.diff)
         )
     }
 
@@ -311,7 +311,7 @@ extension RoutineReviewPipeline {
             <<<GITRANGER_END_AGENT>>>
             """
         }.joined(separator: "\n")
-        let truncatedDiff = String(input.diff.prefix(30_000))
+        let truncatedDiff = ReviewDiffScope.promptDiff(input.diff)
 
         return """
         Perform a quick review covering the following independent roles in one pass. Use low \
@@ -363,13 +363,18 @@ extension RoutineReviewPipeline {
 
     nonisolated static func buildComment(
         request: RoutinePipelineRequest,
-        agents: [RoutineAgentSnapshot]
+        agents: [RoutineAgentSnapshot],
+        diff: String? = nil
     ) -> String {
         var lines = ReviewCommentFormatter.header(
             mode: "Quick review",
             agentCount: agents.count,
             headSHA: request.pullRequest.headRefOid
         )
+
+        if let diff, let warning = ReviewDiffScope.warning(for: diff) {
+            lines += ["> **\(warning)**", ""]
+        }
 
         for agent in agents where agent.status == .completed {
             let icon = agent.verdict == false ? "⚠️" : "✅"

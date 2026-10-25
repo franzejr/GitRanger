@@ -192,11 +192,9 @@ final class GitHubService {
         }
 
         let env = await shellEnv(account: account)
-        return try await runGhOrThrow(
-            arguments: ["pr", "diff", "\(prNumber)", "-R", slug],
-            environment: env,
-            timeout: 30
-        )
+        return try await GitHubPRDiffLoader.load(slug: slug, number: prNumber) { arguments in
+            try await self.runGhOrThrow(arguments: arguments, environment: env, timeout: 30)
+        }
     }
 
     // MARK: - PR Detail

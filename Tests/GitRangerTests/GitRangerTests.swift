@@ -1051,6 +1051,11 @@ final class ReviewRoutineTests: XCTestCase {
         XCTAssertTrue(comment.contains("AI Code Review Summary"))
         XCTAssertTrue(comment.contains("**Mode:** Quick review"))
         XCTAssertTrue(comment.contains("test-model · effort: low"))
+        let partial = RoutineReviewPipeline.buildComment(
+            request: request, agents: [agent], diff: String(repeating: "+line\n", count: 6_000)
+        )
+        XCTAssertTrue(partial.contains("> **Partial review:"))
+        XCTAssertFalse(comment.contains("Partial review:"))
     }
 
     @MainActor
@@ -1152,10 +1157,23 @@ final class ReviewRoutineTests: XCTestCase {
         ))
 
         run.status = .failed
+        run.errorMessage = "Request timed out"
+        run.completedAt = Date().addingTimeInterval(-301)
         XCTAssertTrue(RoutineRunPolicy.shouldEnqueue(
             run.identity,
             existingRuns: [run]
         ))
+
+        run.completedAt = Date()
+        XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run]))
+        run.completedAt = Date().addingTimeInterval(-3600)
+        run.errorMessage = "HTTP 406: diff exceeded the maximum number of files (300). too_large"
+        XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run]))
+        XCTAssertTrue(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run], allowRetry: true))
+        run.errorMessage = "Request timed out"
+        XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run, run, run]))
+        run.status = .cancelled
+        XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run]))
 
         let changedIdentity = RoutineRunIdentity(
             routineID: routine.id,

@@ -72,6 +72,8 @@ The **Agent Activity** dashboard shows every queued and active review, its curre
 
 Routines run while GitRanger is open, including when it is operating from the menu bar. Automatic routines only post comments; they never approve or merge a pull request.
 
+Large GitHub diffs fall back to paginated file patches. Missing or truncated patches stop the review with an actionable error. Reviews limited to the first 30,000 diff characters disclose partial coverage in the prompt and consolidated comment. Permanent failures and cancellations are not retried automatically for the same head; temporary failures get at most two retries, after 5 and 15 minutes. Manual Retry and new commits remain eligible.
+
 ---
 
 ## AI Providers

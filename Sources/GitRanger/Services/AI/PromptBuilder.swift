@@ -128,7 +128,7 @@ enum PromptBuilder {
             ? defaultPRReviewPrompt
             : input.customPrompt!
 
-        let truncatedDiff = String(input.diff.prefix(30000))
+        let truncatedDiff = ReviewDiffScope.promptDiff(input.diff)
 
         return """
         \(instructions)
@@ -158,7 +158,7 @@ enum PromptBuilder {
         } else {
             agentPrompt(for: agent)
         }
-        let truncatedDiff = String(input.diff.prefix(30000))
+        let truncatedDiff = ReviewDiffScope.promptDiff(input.diff)
 
         return """
         \(baseInstructions)
@@ -189,7 +189,7 @@ enum PromptBuilder {
         customAgent: CustomReviewAgent,
         input: PRReviewInput
     ) -> String {
-        let truncatedDiff = String(input.diff.prefix(30000))
+        let truncatedDiff = ReviewDiffScope.promptDiff(input.diff)
 
         return """
         \(customAgent.prompt)
@@ -223,7 +223,7 @@ enum PromptBuilder {
         firstReview: String,
         input: PRReviewInput
     ) -> String {
-        let truncatedDiff = String(input.diff.prefix(30000))
+        let truncatedDiff = ReviewDiffScope.promptDiff(input.diff)
 
         return """
         You are a meticulous senior engineer performing a SECOND PASS verification of a \
@@ -291,7 +291,7 @@ enum PromptBuilder {
     }
 
     static func buildSecondReviewPrompt(_ input: SecondReviewInput) -> String {
-        let truncatedDiff = String(input.diff.prefix(30000))
+        let truncatedDiff = ReviewDiffScope.promptDiff(input.diff)
 
         return """
         \(defaultSecondReviewPrompt)

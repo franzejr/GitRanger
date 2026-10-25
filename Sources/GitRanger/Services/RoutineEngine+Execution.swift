@@ -273,6 +273,12 @@ extension RoutineEngine {
         run.lastEvent = "Review failed"
         run.errorMessage = message
         run.completedAt = Date()
+        let failures = runs.filter { $0.identity == run.identity && $0.status == .failed }.count
+        if !RoutineRunPolicy.isTransientFailure(message) || failures >= 3 {
+            run.lastEvent = "Review failed; automatic retries paused for this commit"
+        } else {
+            run.lastEvent = "Review failed; automatic retry after \(failures == 1 ? 5 : 15) minutes"
+        }
         try? modelContext?.save()
         activeTasks.removeValue(forKey: runID)
     }

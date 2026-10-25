@@ -76,6 +76,10 @@ extension PRReviewViewModel {
             headSHA: selectedPR?.headRefOid ?? "unknown"
         )
 
+        if let diff, let warning = ReviewDiffScope.warning(for: diff) {
+            parts += ["> **\(warning)**", ""]
+        }
+
         for agent in ReviewAgent.allCases {
             guard let text = agentReviews[agent] else { continue }
             let verdict = agentVerdicts[agent]
