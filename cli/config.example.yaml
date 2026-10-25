@@ -1,0 +1,42 @@
+version: 1
+
+execution:
+  max_active_reviews: 2
+  review_timeout: 3m
+  poll_tick: 15s
+
+provider:
+  name: Claude CLI
+  command: claude
+  arguments:
+    - -p
+    - -
+    - --output-format
+    - json
+    - --no-session-persistence
+  model: sonnet
+  effort: low
+
+repositories:
+  - id: example
+    name: Example
+    url: https://github.com/owner/example.git
+    local_path: /path/to/example
+
+routines:
+  - id: 4eaa2c93-6bc1-4a2d-b765-d6bc23c83134
+    name: New pull requests
+    enabled: true
+    repositories: [example]
+    interval: 15m
+    scope: open
+    skip_drafts: true
+    max_prs_per_poll: 1
+    agents:
+      - summary
+      - security
+      - performance
+      - code_quality
+      - bug_detector
+    delivery: preview
+    max_attempts: 3

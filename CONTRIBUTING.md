@@ -88,6 +88,13 @@ The regular test suite skips performance measurements so machine-dependent
 timings do not make CI flaky. Compare results on the same Mac with other apps
 and background review work kept consistent.
 
+**Terminal client:**
+
+```bash
+cd cli
+make check
+```
+
 ## Pull Request Process
 
 1. Update documentation if needed
