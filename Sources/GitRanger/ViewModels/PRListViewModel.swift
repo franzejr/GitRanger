@@ -148,14 +148,16 @@ final class PRListViewModel {
             async let accounts = resolvedGitHubAccounts()
             async let user = resolvedGitHubUser(account: context.githubAccount)
             async let requests = fetchPRs(context: context, limit: pageSize)
-            let loaded = try await (accounts, user, requests)
+            let loaded = try await requests
             guard isCurrentLoad(loadID) else { return }
-
-            ghAccounts = loaded.0
-            currentGhUser = loaded.1
-            pullRequests = loaded.2
+            pullRequests = loaded
             isShowingCachedResults = false
-            await listCache.store(loaded.2, for: context.cacheKey)
+            isLoading = false
+            await listCache.store(loaded, for: context.cacheKey)
+            let metadata = await (accounts, user)
+            guard isCurrentLoad(loadID) else { return }
+            ghAccounts = metadata.0
+            currentGhUser = metadata.1
         } catch is CancellationError {
             return
         } catch {
@@ -182,14 +184,16 @@ final class PRListViewModel {
             async let hosts = resolvedGitLabHosts()
             async let user = resolvedGitLabUser(host: context.gitlabHost)
             async let requests = fetchPRs(context: context, limit: pageSize)
-            let loaded = try await (hosts, user, requests)
+            let loaded = try await requests
             guard isCurrentLoad(loadID) else { return }
-
-            glHosts = loaded.0
-            currentGlUser = loaded.1
-            pullRequests = loaded.2
+            pullRequests = loaded
             isShowingCachedResults = false
-            await listCache.store(loaded.2, for: context.cacheKey)
+            isLoading = false
+            await listCache.store(loaded, for: context.cacheKey)
+            let metadata = await (hosts, user)
+            guard isCurrentLoad(loadID) else { return }
+            glHosts = metadata.0
+            currentGlUser = metadata.1
         } catch is CancellationError {
             return
         } catch {

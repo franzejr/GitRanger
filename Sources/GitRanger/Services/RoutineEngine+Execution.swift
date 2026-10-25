@@ -104,7 +104,7 @@ extension RoutineEngine {
         activeTasks.removeValue(forKey: runID)
     }
 
-    private func finish(
+    func finish(
         runID: UUID,
         request: RoutinePipelineRequest,
         output: RoutinePipelineOutput
@@ -125,7 +125,8 @@ extension RoutineEngine {
 
         let comment = RoutineReviewPipeline.buildComment(
             request: request,
-            agents: combinedOutput.agents
+            agents: combinedOutput.agents,
+            coverageWarning: output.coverageWarning
         )
         run.reviewComment = comment
         try? modelContext?.save()

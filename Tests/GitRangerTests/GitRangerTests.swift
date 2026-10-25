@@ -1174,6 +1174,8 @@ final class ReviewRoutineTests: XCTestCase {
         XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run, run, run]))
         run.status = .cancelled
         XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run]))
+        run.status = .reviewing
+        XCTAssertFalse(RoutineRunPolicy.shouldEnqueue(run.identity, existingRuns: [run], allowRetry: true))
 
         let changedIdentity = RoutineRunIdentity(
             routineID: routine.id,
@@ -1327,6 +1329,51 @@ final class ReviewRoutineTests: XCTestCase {
 
     private func makeRoutine() -> ReviewRoutine {
         ReviewRoutine(name: "Routine", repoIDs: [UUID()])
+    }
+
+    @MainActor
+    func testPreviewFinishPreservesPartialCoverageAndRetryExplanation() async throws {
+        let container = try makeModelContainer()
+        let context = container.mainContext
+        let routine = makeRoutine()
+        let repo = makeRepo()
+        context.insert(routine)
+        context.insert(repo)
+        let pr = makePullRequest(sha: "preview-only")
+        let run = RoutineRun(routine: routine, repo: repo, pullRequest: pr, trigger: .manual)
+        context.insert(run)
+        run.status = .failed
+        run.errorMessage = "HTTP 406: diff exceeded the maximum number of files (300)"
+        let engine = RoutineEngine()
+        engine.modelContext = context
+        try context.save()
+        engine.refresh()
+        XCTAssertTrue(engine.retryMessage(for: run).contains("paused for this commit"))
+
+        run.agentSnapshots = [RoutineAgentSnapshot(
+            id: "summary", name: "Summary", status: .completed,
+            phase: "Review complete", reviewText: "No finding in supplied context."
+        )]
+        run.errorMessage = nil
+        let request = RoutinePipelineRequest(
+            routineID: routine.id,
+            repository: RoutineRepositoryContext(
+                id: repo.id, name: repo.name, url: repo.url, localPath: repo.localPath,
+                githubAccount: nil, gitlabHost: nil, agentPrompts: [:], customAgents: []
+            ),
+            pullRequest: pr, agentIDs: ["summary"], provider: nil, modelName: nil
+        )
+        let warning = ReviewDiffScope.warning(for: String(repeating: "x", count: 30_001))!
+        try await engine.finish(
+            runID: run.id, request: request,
+            output: RoutinePipelineOutput(
+                agents: run.agentSnapshots, comment: "", coverageWarning: warning
+            )
+        )
+        XCTAssertEqual(run.status, .completed)
+        XCTAssertNil(run.postedAt)
+        XCTAssertTrue(run.reviewComment?.contains(warning) == true)
+        XCTAssertTrue(engine.retryMessage(for: run).contains("already has a completed review"))
     }
 
     private func makeRepo() -> Repo {

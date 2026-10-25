@@ -403,17 +403,7 @@ private struct RoutineRunCard: View {
             }
 
             if let error = run.errorMessage {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                    Text(error)
-                        .textSelection(.enabled)
-                }
-                .font(.system(size: 10.5))
-                .foregroundStyle(GRTheme.danger)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(GRTheme.danger.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                RoutineFailureView(error: error, retryMessage: engine.retryMessage(for: run))
             }
         }
         .padding(16)

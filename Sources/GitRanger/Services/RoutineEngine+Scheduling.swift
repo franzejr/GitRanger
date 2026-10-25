@@ -81,15 +81,17 @@ extension RoutineEngine {
                 let candidates = pullRequests.filter {
                     !routine.skipDrafts || !$0.isDraft
                 }
+                let runsByIdentity = Dictionary(grouping: runs, by: \.identity)
                 let pending = candidates.filter { pullRequest in
-                    RoutineRunPolicy.shouldEnqueue(
-                        RoutineRunIdentity(
-                            routineID: routine.id,
-                            repoURL: repo.url,
-                            prNumber: pullRequest.number,
-                            headSHA: pullRequest.headRefOid
-                        ),
-                        existingRuns: runs
+                    let identity = RoutineRunIdentity(
+                        routineID: routine.id,
+                        repoURL: repo.url,
+                        prNumber: pullRequest.number,
+                        headSHA: pullRequest.headRefOid
+                    )
+                    return RoutineRunPolicy.shouldEnqueue(
+                        identity,
+                        existingRuns: runsByIdentity[identity] ?? []
                     )
                 }
                 for pullRequest in pending.prefix(

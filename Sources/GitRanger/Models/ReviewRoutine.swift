@@ -293,10 +293,11 @@ enum RoutineRunPolicy {
         allowRetry: Bool = false,
         now: Date = Date()
     ) -> Bool {
-        if allowRetry { return true }
         let matching = existingRuns.filter { $0.identity == identity }
+        guard !matching.contains(where: { $0.status.isActive }) else { return false }
+        if allowRetry { return true }
         guard !matching.contains(where: {
-            $0.status.isActive || $0.status == .completed || $0.status == .posted || $0.status == .cancelled
+            $0.status == .completed || $0.status == .posted || $0.status == .cancelled
         }) else { return false }
         let failures = matching.filter { $0.status == .failed }
         guard let latest = failures.max(by: { $0.queuedAt < $1.queuedAt }) else { return true }

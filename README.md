@@ -74,6 +74,8 @@ Routines run while GitRanger is open, including when it is operating from the me
 
 Large GitHub diffs fall back to paginated file patches. Missing or truncated patches stop the review with an actionable error. Reviews limited to the first 30,000 diff characters disclose partial coverage in the prompt and consolidated comment. Permanent failures and cancellations are not retried automatically for the same head; temporary failures get at most two retries, after 5 and 15 minutes. Manual Retry and new commits remain eligible.
 
+Failed runs show a concise explanation and whether another attempt is running, a retry is eligible after a future poll, or automatic retries are paused. Expand **Technical details** to inspect the original provider error. Partial-review notices are preserved when results are combined and saved for preview or publication.
+
 ---
 
 ## AI Providers
@@ -169,6 +171,7 @@ For Anthropic API or OpenAI, add your API key in **Settings > AI Provider** insi
 - **GitHub-style diffs** — Color-coded additions/deletions with syntax highlighting
 - **Review caching** — Reviews are cached by PR + head SHA so you never pay twice
 - **Instant PR revisits** — Cached PR lists and content render immediately while fresh data loads in the background
+- **Faster first results** — PR lists appear as soon as they arrive, while account and user metadata finish loading independently
 - **Dark mode** — Full light and dark mode support
 - **SwiftData persistence** — All repos, commits, and reviews persist across sessions
 - **Menu bar icon** — Quick status and manual sync from the menu bar

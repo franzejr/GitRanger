@@ -28,6 +28,7 @@ enum RoutinePipelineEvent: Sendable {
 struct RoutinePipelineOutput: Sendable {
     let agents: [RoutineAgentSnapshot]
     let comment: String
+    var coverageWarning: String?
 
     var hasFailures: Bool {
         agents.contains { $0.status != .completed }
@@ -133,7 +134,8 @@ actor RoutineReviewPipeline {
         await progress(.run(.aggregating, "Combining agent findings"))
         return RoutinePipelineOutput(
             agents: results,
-            comment: Self.buildComment(request: request, agents: results, diff: content.diff)
+            comment: Self.buildComment(request: request, agents: results, diff: content.diff),
+            coverageWarning: ReviewDiffScope.warning(for: content.diff)
         )
     }
 
@@ -364,7 +366,8 @@ extension RoutineReviewPipeline {
     nonisolated static func buildComment(
         request: RoutinePipelineRequest,
         agents: [RoutineAgentSnapshot],
-        diff: String? = nil
+        diff: String? = nil,
+        coverageWarning: String? = nil
     ) -> String {
         var lines = ReviewCommentFormatter.header(
             mode: "Quick review",
@@ -372,7 +375,7 @@ extension RoutineReviewPipeline {
             headSHA: request.pullRequest.headRefOid
         )
 
-        if let diff, let warning = ReviewDiffScope.warning(for: diff) {
+        if let warning = coverageWarning ?? diff.flatMap(ReviewDiffScope.warning) {
             lines += ["> **\(warning)**", ""]
         }
 

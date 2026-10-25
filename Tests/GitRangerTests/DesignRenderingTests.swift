@@ -88,6 +88,14 @@ final class DesignRenderingTests: XCTestCase {
             size: CGSize(width: 1_100, height: 760),
             name: "gitranger-routines-dark"
         )
+        try render(
+            RoutineFailureView(
+                error: "HTTP 406: diff exceeded the maximum number of files (300). too_large",
+                retryMessage: "Automatic retries are paused for this commit. Use Retry manually, or wait for a new commit."
+            ).padding(20).background(GRTheme.background(.dark)).preferredColorScheme(.dark),
+            size: CGSize(width: 780, height: 180),
+            name: "gitranger-routine-failure-dark"
+        )
     }
 
     private func renderReviewSettings() throws {
