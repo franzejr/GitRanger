@@ -230,9 +230,11 @@ func (s *Store) ClaimRun(ctx context.Context, id string, now time.Time) (bool, e
 		UPDATE runs
 		SET status = ?, last_event = ?, attempts = attempts + 1,
 		    started_at = ?, completed_at = NULL, error = '', next_attempt_at = NULL
-		WHERE id = ? AND status IN (?, ?)`,
+		WHERE id = ? AND (
+		  status = ? OR (status = ? AND next_attempt_at <= ?)
+		)`,
 		domain.RunLoading, "Loading pull request", formatTime(now), id,
-		domain.RunQueued, domain.RunRetrying,
+		domain.RunQueued, domain.RunRetrying, formatTime(now),
 	)
 	if err != nil {
 		return false, err
@@ -288,8 +290,12 @@ func (s *Store) RecoverInterrupted(ctx context.Context, now time.Time) error {
 func (s *Store) StartAgents(ctx context.Context, runID string, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE agent_runs SET status = ?, phase = ?, started_at = ?,
-		ended_at = NULL, error = '' WHERE run_id = ?`,
-		domain.AgentReviewing, "Reviewing pull request", formatTime(now), runID)
+		ended_at = NULL, error = ''
+		WHERE run_id = ? AND status = ? AND EXISTS (
+		  SELECT 1 FROM runs WHERE runs.id = agent_runs.run_id AND runs.status = ?
+		)`,
+		domain.AgentReviewing, "Reviewing pull request", formatTime(now), runID,
+		domain.AgentQueued, domain.RunReviewing)
 	return err
 }
 
@@ -299,13 +305,22 @@ func (s *Store) UpdateRun(
 	status domain.RunStatus,
 	event string,
 ) error {
-	_, err := s.db.ExecContext(ctx,
-		"UPDATE runs SET status = ?, last_event = ? WHERE id = ?",
-		status, event, id)
-	if err == nil {
-		err = s.AddEvent(ctx, id, "run."+string(status), event)
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE runs SET status = ?, last_event = ?
+		WHERE id = ? AND status IN (?, ?, ?, ?)`,
+		status, event, id, domain.RunLoading, domain.RunReviewing,
+		domain.RunAggregating, domain.RunPosting)
+	if err != nil {
+		return err
 	}
-	return err
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("run is no longer active")
+	}
+	return s.AddEvent(ctx, id, "run."+string(status), event)
 }
 
 func (s *Store) CompleteRun(
@@ -316,81 +331,112 @@ func (s *Store) CompleteRun(
 	comment string,
 	now time.Time,
 ) error {
-	_, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE runs SET status = ?, last_event = ?, review_comment = ?,
-		completed_at = ?, next_attempt_at = NULL WHERE id = ?`,
-		status, event, comment, formatTime(now), id)
-	if err == nil {
-		err = s.AddEvent(ctx, id, "run."+string(status), event)
+		completed_at = ?, next_attempt_at = NULL
+		WHERE id = ? AND status IN (?, ?, ?, ?)`,
+		status, event, comment, formatTime(now), id, domain.RunLoading,
+		domain.RunReviewing, domain.RunAggregating, domain.RunPosting)
+	if err != nil {
+		return err
 	}
-	return err
+	rows, err := result.RowsAffected()
+	if err != nil || rows == 0 {
+		return err
+	}
+	return s.AddEvent(ctx, id, "run."+string(status), event)
 }
 
 func (s *Store) FailRun(
 	ctx context.Context,
 	id string,
 	message string,
+	retryable bool,
 	now time.Time,
 ) error {
 	run, err := s.Run(ctx, id)
 	if err != nil {
 		return err
 	}
+	if !run.Status.Active() {
+		return nil
+	}
 	status := domain.RunFailed
 	var retryAt any
 	event := "Review failed"
-	if run.Attempts < run.MaxAttempts {
+	if retryable && run.Attempts < run.MaxAttempts {
 		status = domain.RunRetrying
 		delay := retryDelay(run.Attempts)
 		when := now.Add(delay)
 		retryAt = formatTime(when)
-		event = fmt.Sprintf("Retrying in %s", delay.Round(time.Second))
+		event = fmt.Sprintf("Transient failure; retrying in %s", delay.Round(time.Minute))
 	}
-	_, err = s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE runs SET status = ?, last_event = ?, error = ?,
-		next_attempt_at = ?, completed_at = ? WHERE id = ?`,
-		status, event, message, retryAt, formatTime(now), id)
-	if err == nil {
-		err = s.AddEvent(ctx, id, "run."+string(status), message)
+		next_attempt_at = ?, completed_at = ?
+		WHERE id = ? AND status IN (?, ?, ?, ?, ?, ?)`,
+		status, event, message, retryAt, formatTime(now), id,
+		domain.RunQueued, domain.RunLoading, domain.RunReviewing,
+		domain.RunAggregating, domain.RunPosting, domain.RunRetrying)
+	if err != nil {
+		return err
 	}
-	return err
+	rows, err := result.RowsAffected()
+	if err != nil || rows == 0 {
+		return err
+	}
+	return s.AddEvent(ctx, id, "run."+string(status), message)
 }
 
 func retryDelay(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
+	if attempt <= 1 {
+		return 5 * time.Minute
 	}
-	delay := 30 * time.Second * time.Duration(1<<(attempt-1))
-	if delay > 10*time.Minute {
-		return 10 * time.Minute
-	}
-	return delay
+	return 15 * time.Minute
 }
 
 func (s *Store) CancelRun(ctx context.Context, id string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE runs SET status = ?, last_event = ?, completed_at = ?,
 		next_attempt_at = NULL WHERE id = ? AND status IN (?, ?, ?, ?, ?, ?)`,
 		domain.RunCancelled, "Cancelled", formatTime(now), id,
 		domain.RunQueued, domain.RunLoading, domain.RunReviewing,
 		domain.RunAggregating, domain.RunPosting, domain.RunRetrying)
-	if err == nil {
-		err = s.AddEvent(ctx, id, "run.cancelled", "Cancelled")
+	if err != nil {
+		return err
 	}
-	return err
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		run, runErr := s.Run(ctx, id)
+		if runErr == nil && run.Status == domain.RunCancelled {
+			return nil
+		}
+		return errors.New("run is not active and cannot be cancelled")
+	}
+	return s.AddEvent(ctx, id, "run.cancelled", "Cancelled")
 }
 
 func (s *Store) RetryRun(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE runs SET status = ?, last_event = ?, attempts = 0,
 		error = '', completed_at = NULL, next_attempt_at = NULL
 		WHERE id = ? AND status IN (?, ?)`,
 		domain.RunQueued, "Queued for retry", id,
 		domain.RunFailed, domain.RunCancelled)
-	if err == nil {
-		err = s.AddEvent(ctx, id, "run.queued", "Queued for retry")
+	if err != nil {
+		return err
 	}
-	return err
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("only failed or cancelled runs can be retried")
+	}
+	return s.AddEvent(ctx, id, "run.queued", "Queued for retry")
 }
 
 func (s *Store) MarkAgentsCancelled(ctx context.Context, runID string, now time.Time) error {
@@ -420,10 +466,13 @@ func (s *Store) SaveAgents(ctx context.Context, agents []domain.AgentRun) error 
 		_, err := tx.ExecContext(ctx, `
 			UPDATE agent_runs SET status = ?, phase = ?, provider = ?, model = ?,
 			effort = ?, verdict = ?, output = ?, error = ?, started_at = ?, ended_at = ?
-			WHERE id = ?`,
+			WHERE id = ? AND status != ? AND EXISTS (
+			  SELECT 1 FROM runs WHERE runs.id = agent_runs.run_id AND runs.status = ?
+			)`,
 			agent.Status, agent.Phase, agent.Provider, agent.Model, agent.Effort,
 			verdict, agent.Output, agent.Error, nullableFormatted(agent.StartedAt),
-			nullableFormatted(agent.EndedAt), agent.ID)
+			nullableFormatted(agent.EndedAt), agent.ID, domain.AgentCancelled,
+			domain.RunReviewing)
 		if err != nil {
 			return err
 		}

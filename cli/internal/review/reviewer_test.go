@@ -30,7 +30,7 @@ Validate untrusted input.
 	agents[0].Output = stripVerdict(sections["summary"])
 	agents[1].Status, agents[1].Verdict = domain.AgentCompleted, &fail
 	agents[1].Output = stripVerdict(sections["security"])
-	comment := buildComment(run, agents)
+	comment := buildComment(run, agents, "")
 	for _, expected := range []string{
 		"Quick review", "Test Provider · test-model · effort: low",
 		"Validate untrusted input", PublicationMarker(run.RoutineID, run.HeadSHA),
@@ -43,8 +43,17 @@ Validate untrusted input.
 
 func TestPromptTruncatesLargeDiff(t *testing.T) {
 	agents := NewAgents("run", []string{"summary"}, config.Provider{})
-	prompt := buildPrompt(domain.PullRequest{Title: "Test"}, "", strings.Repeat("x", 50_000), agents, "low")
+	diff, warning := reviewCoverage(strings.Repeat("x", 50_000))
+	prompt := buildPrompt(domain.PullRequest{Title: "Test"}, "", diff, agents, "low", warning)
 	if strings.Contains(prompt, strings.Repeat("x", maxDiffBytes+1)) {
 		t.Fatal("diff was not truncated")
+	}
+	if !strings.Contains(prompt, "findings do not cover the entire change") {
+		t.Fatalf("prompt does not disclose partial coverage:\n%s", prompt)
+	}
+	comment := buildComment(domain.Run{HeadSHA: "abcdef1"}, agents, warning)
+	if !strings.Contains(comment, "Partial review coverage") ||
+		!strings.Contains(comment, "findings do not cover the entire change") {
+		t.Fatalf("comment does not preserve partial coverage warning:\n%s", comment)
 	}
 }

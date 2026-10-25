@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/franzejr/gitranger/cli/internal/config"
 	"github.com/franzejr/gitranger/cli/internal/domain"
@@ -40,7 +41,10 @@ func (r Reviewer) Run(
 		agents[index].Phase = "Reviewing pull request"
 		agents[index].StartedAt = &startedAt
 	}
-	prompt := buildPrompt(pullRequest, body, diff, agents, r.Provider.Effort)
+	reviewDiff, coverageWarning := reviewCoverage(diff)
+	prompt := buildPrompt(
+		pullRequest, body, reviewDiff, agents, r.Provider.Effort, coverageWarning,
+	)
 	arguments := append([]string(nil), r.Provider.Arguments...)
 	if r.Provider.Model != "" {
 		arguments = append(arguments, "--model", r.Provider.Model)
@@ -80,7 +84,7 @@ func (r Reviewer) Run(
 	if len(missing) > 0 {
 		return agents, "", fmt.Errorf("provider omitted agent sections: %s", strings.Join(missing, ", "))
 	}
-	comment := buildComment(run, agents)
+	comment := buildComment(run, agents, coverageWarning)
 	return agents, comment, nil
 }
 
@@ -107,6 +111,7 @@ func buildPrompt(
 	diff string,
 	agents []domain.AgentRun,
 	effort string,
+	coverageWarning string,
 ) string {
 	roles := make([]string, 0, len(agents))
 	format := make([]string, 0, len(agents))
@@ -117,13 +122,17 @@ func buildPrompt(
 			"<<<GITRANGER_AGENT:%s>>>\nVERDICT: PASS or VERDICT: FAIL\nConcise findings\n<<<GITRANGER_END_AGENT>>>",
 			agent.AgentID))
 	}
-	if len(diff) > maxDiffBytes {
-		diff = diff[:maxDiffBytes]
+	coverage := "Coverage: the complete supplied diff is included."
+	if coverageWarning != "" {
+		coverage = "Coverage warning: " + coverageWarning +
+			" Every agent must state that its findings are limited to the supplied prefix."
 	}
 	return fmt.Sprintf(`Perform a quick pull request review for every role below in one pass.
 Use %s reasoning effort and finish within the configured deadline. Analyze only
 the supplied context. Prefer concise, high-confidence findings. Return every
 section exactly once and in the requested order.
+
+%s
 
 --- Roles ---
 %s
@@ -140,9 +149,23 @@ Description:
 %s
 
 --- Diff ---
-%s`, defaultValue(effort, "low"), strings.Join(roles, "\n\n"),
+%s`, defaultValue(effort, "low"), coverage, strings.Join(roles, "\n\n"),
 		strings.Join(format, "\n"), pullRequest.Title, pullRequest.Author,
 		pullRequest.HeadRef, pullRequest.BaseRef, defaultValue(body, "(no description)"), diff)
+}
+
+func reviewCoverage(diff string) (string, string) {
+	if len(diff) <= maxDiffBytes {
+		return diff, ""
+	}
+	truncated := diff[:maxDiffBytes]
+	for !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated, fmt.Sprintf(
+		"Partial review: the diff exceeded the %d-byte quick-review limit, so findings do not cover the entire change.",
+		maxDiffBytes,
+	)
 }
 
 func unwrapResponse(raw string) string {
@@ -174,11 +197,14 @@ func parseSections(response string, agents []domain.AgentRun) map[string]string 
 	return sections
 }
 
-func buildComment(run domain.Run, agents []domain.AgentRun) string {
+func buildComment(run domain.Run, agents []domain.AgentRun, coverageWarning string) string {
 	lines := []string{
 		"## AI Code Review Summary", "",
 		fmt.Sprintf("> **Mode:** Quick review · **Agents:** %d · **Head:** `%s`",
 			len(agents), shortSHA(run.HeadSHA)), "",
+	}
+	if coverageWarning != "" {
+		lines = append(lines, "> ⚠️ **Partial review coverage:** "+coverageWarning, "")
 	}
 	for _, agent := range agents {
 		icon := "✅"

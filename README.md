@@ -120,7 +120,9 @@ swift build -c release
 
 The independent Go terminal client combines a responsive dashboard with a
 durable headless daemon. Review routines continue through the
-`Poll → Review → Post` pipeline after the TUI closes.
+`Poll → Review → Post` pipeline after the TUI closes. The TUI can poll a
+selected routine immediately and retry or cancel selected runs without leaving
+the dashboard.
 
 ```bash
 cd cli

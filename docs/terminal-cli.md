@@ -29,9 +29,9 @@ writes runtime state. TUI and non-interactive commands use the same local API.
 queued → loading → reviewing → aggregating → completed
                                       └────→ posting → posted
 
-Any active state → retrying → loading
+Transient failure → retrying (5m, then 15m) → loading
 Any active state → cancelled
-Retry limit      → failed
+Permanent failure or retry limit → failed
 ```
 
 Each transition is persisted before it is exposed through the event stream.
@@ -43,13 +43,19 @@ Interrupted active work becomes retryable when the daemon restarts.
 - Review concurrency is bounded by `execution.max_active_reviews`.
 - Every review has a context deadline and subprocess process group.
 - Cancellation terminates the whole process group on macOS and Linux.
-- Retry delay grows exponentially from 30 seconds to a 10-minute ceiling.
+- Transient failures retry after five minutes, then at a bounded fifteen-minute
+  interval. Permanent failures wait for an explicit manual retry.
 - Queue claims are conditional state transitions, so duplicate queue messages
-  cannot start the same run twice.
+  cannot start the same run twice or bypass a retry deadline.
 
 The TUI never performs network, database, or subprocess work in its render
-loop. It refreshes immutable snapshots from the daemon and remains responsive
-while reviews run.
+loop. It prevents overlapping snapshot requests, preserves detail scrolling,
+and renders unchanged review Markdown only once. Run windows follow the current
+selection instead of rendering an invisible selection above or below the view.
+
+Routines and runs are actionable from the TUI: a selected routine can be polled
+immediately, and a selected run can be cancelled or manually retried through
+the same daemon API used by non-interactive commands.
 
 ## Idempotency
 
@@ -74,8 +80,18 @@ or restored local database creating duplicate comments.
 ## Cache
 
 PR descriptions and diffs are immutable cache entries keyed by repository, PR
-number, and head SHA. Detail and diff are fetched concurrently by the GitHub
-adapter and reused by retries. A changed head necessarily misses the cache.
+number, and head SHA. A changed head necessarily misses the cache.
+
+The GitHub adapter first records the expected head and changed-file count. When
+the normal diff command cannot return a complete diff, it requests 100 files per
+page up to 3,000 files and rebuilds the patch. Missing patches, count mismatches,
+duplicate files, or a head change fail closed before provider execution. The
+head and count are checked again after loading to avoid reviewing mixed
+revisions.
+
+Provider input is capped for quick-review latency. Truncation produces an
+explicit partial-coverage warning in both the provider prompt and the final
+review comment, so aggregation cannot silently drop that limitation.
 
 ## Configuration and secrets
 

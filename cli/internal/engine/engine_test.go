@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -32,7 +34,7 @@ func (f *fakeSource) List(context.Context, config.Repository, string) ([]domain.
 	}}, nil
 }
 
-func (*fakeSource) Content(context.Context, config.Repository, int) (string, string, error) {
+func (*fakeSource) Content(context.Context, config.Repository, int, string) (string, string, error) {
 	return "Description", "+ durable scheduler", nil
 }
 
@@ -121,6 +123,32 @@ func TestPollReviewPostIsDurableAndIdempotent(t *testing.T) {
 	source.mu.Unlock()
 	if posts != 1 {
 		t.Fatalf("posts = %d, want 1", posts)
+	}
+}
+
+type classifiedError struct{ retry bool }
+
+func (classifiedError) Error() string       { return "classified failure" }
+func (err classifiedError) Retryable() bool { return err.retry }
+
+func TestRetryableClassifiesFailuresConservatively(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: true},
+		{name: "rate limit", err: errors.New("provider rate limit reached"), want: true},
+		{name: "explicit transient", err: classifiedError{retry: true}, want: true},
+		{name: "explicit permanent", err: fmt.Errorf("load diff: %w", classifiedError{}), want: false},
+		{name: "unknown defaults permanent", err: errors.New("invalid provider configuration"), want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := retryable(test.err); got != test.want {
+				t.Fatalf("retryable() = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
 

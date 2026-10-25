@@ -14,7 +14,6 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/franzejr/gitranger/cli/internal/config"
-	"github.com/franzejr/gitranger/cli/internal/daemon"
 	"github.com/franzejr/gitranger/cli/internal/domain"
 )
 
@@ -34,8 +33,20 @@ type snapshotMsg struct {
 
 type refreshMsg time.Time
 
+type actionMsg struct {
+	label string
+	err   error
+}
+
+type API interface {
+	Snapshot(context.Context) (domain.Snapshot, error)
+	PollRoutine(context.Context, string) error
+	CancelRun(context.Context, string) error
+	RetryRun(context.Context, string) error
+}
+
 type Model struct {
-	client     *daemon.Client
+	client     API
 	config     config.Config
 	snapshot   domain.Snapshot
 	spinner    spinner.Model
@@ -47,6 +58,14 @@ type Model struct {
 	loading    bool
 	error      string
 	detailOpen bool
+
+	routineSelected int
+	actionPending   bool
+	notice          string
+	noticeError     bool
+	detailVersion   uint64
+	detailCached    bool
+	detailRunID     string
 }
 
 var (
@@ -67,7 +86,7 @@ var (
 			BorderForeground(border).Background(surface).Padding(1, 2)
 )
 
-func New(client *daemon.Client, cfg config.Config) Model {
+func New(client API, cfg config.Config) Model {
 	activity := spinner.New()
 	activity.Spinner = spinner.Dot
 	activity.Style = lipgloss.NewStyle().Foreground(accent)
@@ -109,40 +128,99 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = (m.screen + 3) % 4
 			m.detailOpen = false
 		case "j", "down":
-			if !m.detailOpen && m.selected+1 < len(m.snapshot.RecentRuns) {
-				m.selected++
+			if !m.detailOpen {
+				if m.screen == routinesScreen && m.routineSelected+1 < len(m.config.Routines) {
+					m.routineSelected++
+				} else if m.screen != routinesScreen && m.selected+1 < len(m.snapshot.RecentRuns) {
+					m.selected++
+				}
 			}
 		case "k", "up":
-			if !m.detailOpen && m.selected > 0 {
-				m.selected--
+			if !m.detailOpen {
+				if m.screen == routinesScreen && m.routineSelected > 0 {
+					m.routineSelected--
+				} else if m.screen != routinesScreen && m.selected > 0 {
+					m.selected--
+				}
 			}
 		case "enter":
-			if len(m.snapshot.RecentRuns) > 0 {
+			if m.screen == routinesScreen {
+				if command := m.pollSelectedRoutine(); command != nil {
+					commands = append(commands, command)
+				}
+			} else if len(m.snapshot.RecentRuns) > 0 {
 				m.detailOpen = true
-				m.setDetailContent()
+				m.setDetailContent(true)
 			}
 		case "esc", "backspace":
 			m.detailOpen = false
 		case "r":
-			m.loading = true
-			commands = append(commands, m.loadSnapshot())
+			if command := m.beginSnapshotRefresh(); command != nil {
+				commands = append(commands, command)
+			}
+		case "p":
+			if command := m.pollSelectedRoutine(); command != nil {
+				commands = append(commands, command)
+			}
+		case "R":
+			if command := m.retrySelectedRun(); command != nil {
+				commands = append(commands, command)
+			}
+		case "x":
+			if command := m.cancelSelectedRun(); command != nil {
+				commands = append(commands, command)
+			}
 		}
 	case snapshotMsg:
 		m.loading = false
 		if message.err != nil {
 			m.error = message.err.Error()
 		} else {
+			selectedRunID := ""
+			if m.selected >= 0 && m.selected < len(m.snapshot.RecentRuns) {
+				selectedRunID = runIdentity(m.snapshot.RecentRuns[m.selected])
+			}
 			m.error = ""
 			m.snapshot = message.snapshot
-			if m.selected >= len(m.snapshot.RecentRuns) {
+			if selectedRunID != "" {
+				for index, run := range m.snapshot.RecentRuns {
+					if runIdentity(run) == selectedRunID {
+						m.selected = index
+						break
+					}
+				}
+			}
+			if len(m.snapshot.RecentRuns) == 0 {
+				m.selected = 0
+				m.detailOpen = false
+				m.detailCached = false
+				m.detailRunID = ""
+			} else if m.selected < 0 || m.selected >= len(m.snapshot.RecentRuns) {
 				m.selected = max(0, len(m.snapshot.RecentRuns)-1)
 			}
+			if m.routineSelected >= len(m.config.Routines) {
+				m.routineSelected = max(0, len(m.config.Routines)-1)
+			}
 			if m.detailOpen {
-				m.setDetailContent()
+				m.setDetailContent(false)
 			}
 		}
 	case refreshMsg:
-		commands = append(commands, m.loadSnapshot(), refreshAfter())
+		if command := m.beginSnapshotRefresh(); command != nil {
+			commands = append(commands, command)
+		}
+		commands = append(commands, refreshAfter())
+	case actionMsg:
+		m.actionPending = false
+		m.noticeError = message.err != nil
+		if message.err != nil {
+			m.notice = message.label + ": " + message.err.Error()
+		} else {
+			m.notice = message.label
+		}
+		if command := m.beginSnapshotRefresh(); command != nil {
+			commands = append(commands, command)
+		}
 	}
 	var command tea.Cmd
 	m.spinner, command = m.spinner.Update(message)
@@ -191,6 +269,10 @@ func (m Model) renderFooter(width int) string {
 	help := "1 dashboard   2 routines   3 runs   4 settings   j/k navigate   enter details   r refresh   q quit"
 	if m.detailOpen {
 		help = "↑/↓ scroll   pgup/pgdn page   esc back   r refresh   q quit"
+	} else if m.screen == routinesScreen {
+		help = "j/k select   enter/p poll now   r refresh   q quit"
+	} else if m.screen == runsScreen || m.screen == dashboardScreen {
+		help = "j/k select   enter details   R retry   x cancel   r refresh   q quit"
 	}
 	return lipgloss.NewStyle().Width(width).Foreground(muted).
 		BorderStyle(lipgloss.NormalBorder()).BorderTop(true).
@@ -261,16 +343,25 @@ func (m Model) renderTopNav(width int) string {
 }
 
 func (m Model) renderMain(width, height int) string {
+	var content string
 	switch m.screen {
 	case routinesScreen:
-		return m.renderRoutines(width, height)
+		content = m.renderRoutines(width, height)
 	case runsScreen:
-		return m.renderRuns(width, height)
+		content = m.renderRuns(width, height)
 	case settingsScreen:
-		return m.renderSettings(width, height)
+		content = m.renderSettings(width, height)
 	default:
-		return m.renderDashboard(width, height)
+		content = m.renderDashboard(width, height)
 	}
+	if m.notice == "" {
+		return content
+	}
+	style := lipgloss.NewStyle().Foreground(green)
+	if m.noticeError {
+		style = style.Foreground(red)
+	}
+	return style.Render(m.notice) + "\n" + content
 }
 
 func (m Model) renderDashboard(width, height int) string {
@@ -299,7 +390,11 @@ func (m Model) renderRoutines(width, height int) string {
 		lines = append(lines, cardStyle.Width(max(20, width-6)).Render(
 			"No routines configured.\n\nRun `gitranger config init`, then edit config.yaml."))
 	}
-	for _, routine := range m.config.Routines {
+	start, end := visibleWindow(
+		len(m.config.Routines), m.routineSelected, max(1, height-3), 6, len(m.config.Routines),
+	)
+	for index := start; index < end; index++ {
+		routine := m.config.Routines[index]
 		state := lipgloss.NewStyle().Foreground(green).Render("● ENABLED")
 		if !routine.Enabled {
 			state = mutedStyle.Render("○ PAUSED")
@@ -310,7 +405,11 @@ func (m Model) renderRoutines(width, height int) string {
 				routine.IntervalRaw, len(routine.RepositoryIDs), len(routine.Agents), delivery)) + "\n" +
 			accentStyle.Render("Poll") + mutedStyle.Render("  →  ") +
 			accentStyle.Render("Review") + mutedStyle.Render("  →  ") + accentStyle.Render("Post")
-		lines = append(lines, cardStyle.Width(max(20, width-6)).Render(content))
+		style := cardStyle.Width(max(20, width-6))
+		if index == m.routineSelected {
+			style = style.BorderForeground(accent)
+		}
+		lines = append(lines, style.Render(content))
 	}
 	return trimHeight(strings.Join(lines, "\n"), height)
 }
@@ -324,11 +423,10 @@ func (m Model) runList(width, height, limit int) string {
 	if len(m.snapshot.RecentRuns) == 0 {
 		return mutedStyle.Render("No review runs yet.")
 	}
+	start, end := visibleWindow(len(m.snapshot.RecentRuns), m.selected, height, 6, limit)
 	var cards []string
-	for index, run := range m.snapshot.RecentRuns {
-		if index >= limit {
-			break
-		}
+	for index := start; index < end; index++ {
+		run := m.snapshot.RecentRuns[index]
 		style := cardStyle.Width(max(20, width-6))
 		if index == m.selected {
 			style = style.BorderForeground(accent)
@@ -397,11 +495,17 @@ func (m *Model) resizeViewport() {
 	m.viewport.SetHeight(max(5, m.height-5))
 }
 
-func (m *Model) setDetailContent() {
+func (m *Model) setDetailContent(force bool) {
 	if len(m.snapshot.RecentRuns) == 0 {
 		return
 	}
 	run := m.snapshot.RecentRuns[m.selected]
+	version := detailFingerprint(run)
+	if !force && m.detailCached && version == m.detailVersion {
+		return
+	}
+	previousOffset := m.viewport.YOffset()
+	previousRunID := m.detailRunID
 	header := titleStyle.Render(fmt.Sprintf("#%d %s", run.PRNumber, run.PRTitle)) + "\n" +
 		mutedStyle.Render(fmt.Sprintf("%s · @%s · %s · %s",
 			run.Repository, run.PRAuthor, shortSHA(run.HeadSHA), run.Status)) + "\n\n"
@@ -426,7 +530,14 @@ func (m *Model) setDetailContent() {
 		body = strings.Join(agents, "\n\n")
 	}
 	m.viewport.SetContent(header + body)
-	m.viewport.GotoTop()
+	m.detailVersion = version
+	m.detailCached = true
+	m.detailRunID = runIdentity(run)
+	if force || previousRunID != m.detailRunID {
+		m.viewport.GotoTop()
+	} else {
+		m.viewport.SetYOffset(previousOffset)
+	}
 }
 
 func (m Model) loadSnapshot() tea.Cmd {
@@ -435,6 +546,68 @@ func (m Model) loadSnapshot() tea.Cmd {
 		defer cancel()
 		snapshot, err := m.client.Snapshot(ctx)
 		return snapshotMsg{snapshot: snapshot, err: err}
+	}
+}
+
+func (m *Model) beginSnapshotRefresh() tea.Cmd {
+	if m.loading {
+		return nil
+	}
+	m.loading = true
+	return m.loadSnapshot()
+}
+
+func (m *Model) pollSelectedRoutine() tea.Cmd {
+	if m.actionPending || m.client == nil || m.screen != routinesScreen ||
+		m.routineSelected >= len(m.config.Routines) {
+		return nil
+	}
+	routine := m.config.Routines[m.routineSelected]
+	m.actionPending = true
+	m.notice, m.noticeError = "Polling "+routine.Name+"…", false
+	return actionCommand("Poll requested for "+routine.Name, func(ctx context.Context) error {
+		return m.client.PollRoutine(ctx, routine.ID)
+	})
+}
+
+func (m *Model) retrySelectedRun() tea.Cmd {
+	run, ok := m.selectedRun()
+	if !ok || m.actionPending || m.client == nil ||
+		(run.Status != domain.RunFailed && run.Status != domain.RunCancelled) {
+		return nil
+	}
+	m.actionPending = true
+	m.notice, m.noticeError = fmt.Sprintf("Retrying %s #%d…", run.Repository, run.PRNumber), false
+	return actionCommand(fmt.Sprintf("Retry queued for %s #%d", run.Repository, run.PRNumber), func(ctx context.Context) error {
+		return m.client.RetryRun(ctx, run.ID)
+	})
+}
+
+func (m *Model) cancelSelectedRun() tea.Cmd {
+	run, ok := m.selectedRun()
+	if !ok || m.actionPending || m.client == nil || !run.Status.Active() {
+		return nil
+	}
+	m.actionPending = true
+	m.notice, m.noticeError = fmt.Sprintf("Cancelling %s #%d…", run.Repository, run.PRNumber), false
+	return actionCommand(fmt.Sprintf("Cancelled %s #%d", run.Repository, run.PRNumber), func(ctx context.Context) error {
+		return m.client.CancelRun(ctx, run.ID)
+	})
+}
+
+func (m Model) selectedRun() (domain.Run, bool) {
+	if m.detailOpen || (m.screen != runsScreen && m.screen != dashboardScreen) ||
+		m.selected < 0 || m.selected >= len(m.snapshot.RecentRuns) {
+		return domain.Run{}, false
+	}
+	return m.snapshot.RecentRuns[m.selected], true
+}
+
+func actionCommand(label string, action func(context.Context) error) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return actionMsg{label: label, err: action(ctx)}
 	}
 }
 
@@ -477,6 +650,63 @@ func truncate(value string, width int) string {
 		runes = runes[:len(runes)-1]
 	}
 	return string(runes) + "…"
+}
+
+func visibleWindow(total, selected, height, cardHeight, limit int) (int, int) {
+	if total <= 0 || limit <= 0 {
+		return 0, 0
+	}
+	visible := min(total, limit, max(1, height/max(1, cardHeight)))
+	selected = min(max(0, selected), total-1)
+	start := (selected / visible) * visible
+	end := min(total, start+visible)
+	return start, end
+}
+
+func detailFingerprint(run domain.Run) uint64 {
+	hash := uint64(14695981039346656037)
+	hash = hashDetailString(hash, runIdentity(run))
+	hash = hashDetailString(hash, string(run.Status))
+	hash = hashDetailString(hash, run.LastEvent)
+	hash = hashDetailString(hash, run.Error)
+	hash = hashDetailString(hash, run.ReviewComment)
+	for _, agent := range run.Agents {
+		hash = hashDetailString(hash, agent.ID)
+		hash = hashDetailString(hash, agent.Name)
+		hash = hashDetailString(hash, string(agent.Status))
+		hash = hashDetailString(hash, agent.Phase)
+		hash = hashDetailString(hash, agent.Provider)
+		hash = hashDetailString(hash, agent.Model)
+		hash = hashDetailString(hash, agent.Effort)
+		hash = hashDetailString(hash, agent.Output)
+		hash = hashDetailString(hash, agent.Error)
+		if agent.Verdict == nil {
+			hash = hashDetailString(hash, "unset")
+		} else if *agent.Verdict {
+			hash = hashDetailString(hash, "pass")
+		} else {
+			hash = hashDetailString(hash, "fail")
+		}
+	}
+	return hash
+}
+
+func hashDetailString(hash uint64, value string) uint64 {
+	const prime = uint64(1099511628211)
+	for index := range len(value) {
+		hash ^= uint64(value[index])
+		hash *= prime
+	}
+	hash ^= 0
+	hash *= prime
+	return hash
+}
+
+func runIdentity(run domain.Run) string {
+	if run.ID != "" {
+		return run.ID
+	}
+	return fmt.Sprintf("%s#%d@%s", run.Repository, run.PRNumber, run.HeadSHA)
 }
 
 func trimHeight(value string, height int) string {

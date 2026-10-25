@@ -9,11 +9,14 @@ daemon, so routines continue to run after the interface closes.
 - A responsive Bubble Tea dashboard for routines, runs, agents, and settings.
 - A headless daemon with a local Unix socket API and SSE event stream.
 - A durable `Poll → Review → Post` scheduler backed by SQLite WAL.
-- Bounded review workers, cancellation, timeouts, crash recovery, and retries.
+- Bounded review workers, cancellation, timeouts, crash recovery, and retries
+  for transient failures at five- and fifteen-minute deadlines.
 - Immutable PR content caching by repository, PR number, and head SHA.
 - Run deduplication by routine, repository, PR number, and head SHA.
 - Remote publication markers that make automatic comments idempotent.
 - GitHub support through the authenticated `gh` CLI.
+- Complete large-PR fallback through paginated GitHub file data, with patch,
+  count, and head-revision checks before review.
 - Human-readable commands plus `--json` output for automation.
 
 ## Requirements
@@ -47,6 +50,23 @@ gitranger daemon install
 ```
 
 This installs a user LaunchAgent on macOS or a user systemd service on Linux.
+
+## TUI controls
+
+```text
+1/2/3/4       Open Dashboard, Routines, Runs, or Settings
+j/k or ↑/↓   Move the selected routine or run
+enter / p     Poll the selected routine now
+enter         Open the selected run details
+R             Retry a selected failed or cancelled run
+x             Cancel a selected active run
+r             Refresh without overlapping an in-flight refresh
+q             Close the TUI without stopping the daemon
+```
+
+The runs view keeps the selected run visible as the list moves. Live snapshot
+updates preserve the detail scroll position and reuse rendered Markdown while
+the selected review is unchanged.
 
 ## Commands
 
@@ -92,6 +112,21 @@ Runtime state is kept under `~/.local/share/gitranger` unless
 
 The TUI is a client of the daemon. Closing it never cancels scheduled routines.
 
+## Review safety
+
+The GitHub adapter verifies the PR head before and after loading a diff. If the
+normal diff command cannot represent a large PR, the adapter loads 100 files per
+page, up to GitHub's 3,000-file limit. It refuses to review when the file count,
+revision, or any patch is incomplete.
+
+Quick reviews intentionally cap provider input at 30,000 bytes. When that cap is
+reached, both the provider prompt and final review comment display an explicit
+partial-coverage warning.
+
+Only transient failures retry automatically: first after five minutes, then at
+fifteen-minute intervals within the routine attempt limit. Permanent failures
+remain visible and can always be retried manually after their cause is fixed.
+
 ## Development
 
 ```bash
@@ -99,6 +134,15 @@ make check
 ```
 
 Tests use fake SCM and review implementations and never require network access.
+An optional read-only integration test can validate any authenticated large PR:
+
+```bash
+GITRANGER_GITHUB_LARGE_PR=owner/repository#123 \
+GITRANGER_GITHUB_EXPECTED_FILES=326 \
+make integration-large-pr
+```
+
+The integration test only reads PR metadata and diffs; it never posts comments.
 
 ## Current first-release boundaries
 

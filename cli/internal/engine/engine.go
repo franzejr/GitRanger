@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 type Source interface {
 	List(context.Context, config.Repository, string) ([]domain.PullRequest, error)
-	Content(context.Context, config.Repository, int) (string, string, error)
+	Content(context.Context, config.Repository, int, string) (string, string, error)
 	HasComment(context.Context, config.Repository, int, string) (bool, error)
 	PostComment(context.Context, config.Repository, int, string) error
 }
@@ -234,7 +235,7 @@ func (e *Engine) execute(parent context.Context, runID string) {
 		return
 	}
 	if !cached {
-		body, diff, err = e.source.Content(ctx, repository, run.PRNumber)
+		body, diff, err = e.source.Content(ctx, repository, run.PRNumber, run.HeadSHA)
 		if err != nil {
 			e.fail(parent, runID, err)
 			return
@@ -296,11 +297,39 @@ func (e *Engine) execute(parent context.Context, runID string) {
 
 func (e *Engine) fail(ctx context.Context, runID string, err error) {
 	if errors.Is(err, context.Canceled) {
-		_ = e.store.MarkAgentsCancelled(ctx, runID, time.Now().UTC())
-		_ = e.store.CancelRun(ctx, runID, time.Now().UTC())
+		now := time.Now().UTC()
+		if e.store.CancelRun(ctx, runID, now) == nil {
+			_ = e.store.MarkAgentsCancelled(ctx, runID, now)
+		}
 		return
 	}
-	_ = e.store.FailRun(ctx, runID, err.Error(), time.Now().UTC())
+	_ = e.store.FailRun(ctx, runID, err.Error(), retryable(err), time.Now().UTC())
+}
+
+type retryableFailure interface {
+	Retryable() bool
+}
+
+func retryable(err error) bool {
+	var classified retryableFailure
+	if errors.As(err, &classified) {
+		return classified.Retryable()
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, signal := range []string{
+		"timeout", "timed out", "temporarily unavailable", "rate limit",
+		"too many requests", "connection reset", "connection refused",
+		"bad gateway", "service unavailable", "gateway timeout",
+		"provider omitted agent sections",
+	} {
+		if strings.Contains(message, signal) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) Cancel(ctx context.Context, runID string) error {
@@ -310,8 +339,11 @@ func (e *Engine) Cancel(ctx context.Context, runID string) error {
 	if cancel != nil {
 		cancel()
 	}
-	_ = e.store.MarkAgentsCancelled(ctx, runID, time.Now().UTC())
-	return e.store.CancelRun(ctx, runID, time.Now().UTC())
+	now := time.Now().UTC()
+	if err := e.store.CancelRun(ctx, runID, now); err != nil {
+		return err
+	}
+	return e.store.MarkAgentsCancelled(ctx, runID, now)
 }
 
 func (e *Engine) Retry(ctx context.Context, runID string) error {
