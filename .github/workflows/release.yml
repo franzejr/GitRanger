@@ -94,6 +94,11 @@ jobs:
             echo "2. Unzip and move \`GitRanger.app\` to your Applications folder"
             echo "3. On first launch, **right-click** the app and choose **Open** (macOS blocks unsigned apps on double-click)"
             echo "4. Click **Open** in the confirmation dialog"
+            echo ""
+            echo "### Terminal client (Linux and macOS)"
+            echo ""
+            echo 'Download the matching `gitranger-cli-*-OS-ARCH.tar.gz`, extract it, and run `./gitranger`.'
+            echo 'Verify the archive with `sha256sum -c SHA256SUMS` on Linux or `shasum -a 256 -c SHA256SUMS` on macOS.'
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -157,13 +162,46 @@ jobs:
           ditto -c -k --keepParent GitRanger.app \
             "GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip"
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Validate terminal client
+        working-directory: cli
+        run: make check
+
+      - name: Package terminal clients
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          mkdir -p cli-release
+          for target_os in linux darwin; do
+            for target_arch in amd64 arm64; do
+              staging=$(mktemp -d)
+              (cd cli && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
+                go build -trimpath -ldflags "-s -w -X main.version=$RELEASE_VERSION" \
+                -o "$staging/gitranger" ./cmd/gitranger)
+              cp cli/README.md cli/PROMPTS.md cli/config.example.yaml "$staging/"
+              tar -czf "cli-release/gitranger-cli-${RELEASE_VERSION}-${target_os}-${target_arch}.tar.gz" \
+                -C "$staging" gitranger README.md PROMPTS.md config.example.yaml
+              rm -rf "$staging"
+            done
+          done
+          (cd cli-release && shasum -a 256 *.tar.gz > SHA256SUMS)
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           name: GitRanger ${{ steps.version.outputs.VERSION }} (build ${{ steps.version.outputs.BUILD }})
           body: ${{ steps.changelog.outputs.CHANGELOG }}
-          files: GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip
+          files: |
+            GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip
+            cli-release/*.tar.gz
+            cli-release/SHA256SUMS
+          fail_on_unmatched_files: true
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -44,6 +44,7 @@ func New(version string) *cobra.Command {
 			return options.openTUI(command.Context(), true)
 		},
 	}
+	withTailscaleProfile(root)
 	root.SetOut(options.Out)
 	root.SetErr(options.Err)
 	root.PersistentFlags().StringVar(&options.ConfigPath, "config", defaultConfig, "configuration file")
@@ -118,6 +119,11 @@ func (o *Options) daemonCommand() *cobra.Command {
 			},
 		},
 	)
+	for _, child := range command.Commands() {
+		if child.Name() == "run" || child.Name() == "start" {
+			withTailscaleProfile(child)
+		}
+	}
 	return command
 }
 
@@ -170,6 +176,11 @@ func (o *Options) routineCommand() *cobra.Command {
 			},
 		},
 	)
+	for _, child := range command.Commands() {
+		if child.Name() == "run" {
+			withTailscaleProfile(child)
+		}
+	}
 	return command
 }
 
