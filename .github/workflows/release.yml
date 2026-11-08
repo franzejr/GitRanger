@@ -22,7 +22,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success') ||
       (github.event_name == 'push' && github.ref_type == 'tag')
     name: Build & Release
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:
