@@ -135,6 +135,12 @@ go build -o gitranger ./cmd/gitranger
 See [Terminal client](cli/README.md) for commands, service installation,
 configuration, and current platform support.
 
+### Terminal review prompts
+
+The terminal client’s [review prompt guide](cli/PROMPTS.md) includes the full
+copyable prompt for summary, security, performance, code quality, and bug detection,
+plus its response format and partial-diff warning.
+
 ### Setting Up Claude Code (Recommended)
 
 ```bash

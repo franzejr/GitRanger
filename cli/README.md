@@ -51,6 +51,38 @@ gitranger daemon install
 
 This installs a user LaunchAgent on macOS or a user systemd service on Linux.
 
+## Select a Tailscale connection
+
+To switch to an already authenticated Tailscale account before starting polling:
+
+```bash
+tailscale switch --list
+./gitranger daemon start --tailscale-profile "PROFILE_ID"
+```
+
+Use an ID, email, tailnet name, or display name accepted by `tailscale switch`.
+The option also works with the TUI, foreground daemon, and immediate polling:
+
+```bash
+./gitranger --tailscale-profile "PROFILE_ID"
+./gitranger daemon run --tailscale-profile "PROFILE_ID"
+./gitranger routine list
+./gitranger routine run ROUTINE_ID --tailscale-profile "PROFILE_ID"
+```
+
+This switches the **whole machine's active Tailscale account**, just like the
+Omarchy connection selector. It does not isolate GitRanger traffic or configure
+an exit node. Selection happens once before the command runs, including when a
+daemon is already running. Later account changes also affect the daemon. The
+previous account is not restored when GitRanger exits.
+
+Without the option, GitRanger leaves Tailscale untouched and does not require it.
+An invalid profile, missing Tailscale CLI, or failed switch aborts the requested
+command. An already-running daemon is not stopped by a failed switch.
+The account must already be logged in and your user must have permission to
+switch it. This flag is not saved to configuration or installed services; for a
+service, select the account with `tailscale switch PROFILE_ID` before starting it.
+
 ## TUI controls
 
 ```text
@@ -126,6 +158,13 @@ partial-coverage warning.
 Only transient failures retry automatically: first after five minutes, then at
 fifteen-minute intervals within the routine attempt limit. Permanent failures
 remain visible and can always be retried manually after their cause is fixed.
+
+## Review prompts
+
+Want to reuse the review prompt? See [Review prompts](PROMPTS.md) for the complete
+copyable template, the five default roles, the expected response format, and the
+partial-diff warning. The guide also explains which configuration fields change
+the prompt.
 
 ## Development
 
