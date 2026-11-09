@@ -162,7 +162,7 @@ jobs:
           ditto -c -k --keepParent GitRanger.app \
             "GitRanger-${{ steps.version.outputs.VERSION }}-macos.zip"
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
